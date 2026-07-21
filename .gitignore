@@ -12,3 +12,4 @@ node_modules/
 # Local scratch
 LEDGER.md
 .DS_Store
+tsconfig.tsbuildinfo

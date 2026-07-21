@@ -208,7 +208,7 @@ export default defineSchema({
     stack: v.optional(v.string()),
     route: v.optional(v.string()),
     userAgent: v.optional(v.string()),
-  }).index('by_creation', []),
+  }),                                  // no explicit index — _creationTime ordering is implicit
 });
 ```
 
