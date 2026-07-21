@@ -1,0 +1,73 @@
+@import 'tailwindcss';
+
+/* ============================================================
+   MERIDIAN design tokens — docs/spec/10-ux-spec.md §1
+   Cartography motif: ink on paper, quiet precision.
+   No colors or sizes outside these tokens (CLAUDE.md rule).
+   ============================================================ */
+
+:root {
+  --paper: oklch(0.98 0.004 85);       /* near-white warm gray */
+  --surface: oklch(1 0 0);
+  --ink: oklch(0.24 0.01 85);
+  --ink-muted: oklch(0.48 0.012 85);
+  --ink-faint: oklch(0.86 0.006 85);   /* hairlines / metadata */
+  --meridian: oklch(0.45 0.11 255);    /* deep blue — the single accent */
+  --support: oklch(0.52 0.08 150);     /* moss green */
+  --contradict: oklch(0.5 0.12 30);    /* oxide red */
+  --pending: oklch(0.68 0.11 80);      /* amber */
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --paper: oklch(0.19 0.006 85);     /* near-black warm */
+    --surface: oklch(0.24 0.008 85);   /* elevated charcoal */
+    --ink: oklch(0.92 0.005 85);
+    --ink-muted: oklch(0.68 0.01 85);
+    --ink-faint: oklch(0.36 0.008 85);
+    --meridian: oklch(0.68 0.1 255);
+    --support: oklch(0.66 0.08 150);
+    --contradict: oklch(0.64 0.11 30);
+    --pending: oklch(0.74 0.1 80);
+  }
+}
+
+@theme inline {
+  --color-paper: var(--paper);
+  --color-surface: var(--surface);
+  --color-ink: var(--ink);
+  --color-ink-muted: var(--ink-muted);
+  --color-ink-faint: var(--ink-faint);
+  --color-meridian: var(--meridian);
+  --color-support: var(--support);
+  --color-contradict: var(--contradict);
+  --color-pending: var(--pending);
+
+  --font-sans: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+  --font-statement: var(--font-newsreader), ui-serif, Georgia, serif;
+
+  /* Type scale (10-ux §1): metadata / body / statement / title.
+     Inputs must never render below 16px (iOS force-zoom rule). */
+  --text-meta: 0.8125rem;      /* 13px */
+  --text-body: 0.9375rem;      /* 15px */
+  --text-statement: 1.0625rem; /* 17px */
+  --text-title: 1.375rem;      /* 22px */
+
+  --radius-card: 8px;
+  --radius-control: 6px;
+}
+
+body {
+  background: var(--color-paper);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+  /* iOS PWA: permit panning only — pinch zoom stays browser-default elsewhere */
+  touch-action: pan-x pan-y;
+}
+
+/* Motion rule: 150ms ease-out state fades only. Nothing bounces or celebrates. */
+@media (prefers-reduced-motion: no-preference) {
+  .fade-state {
+    transition: opacity 150ms ease-out, background-color 150ms ease-out;
+  }
+}
