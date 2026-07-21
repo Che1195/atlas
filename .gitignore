@@ -1,0 +1,14 @@
+# Dependencies / build
+node_modules/
+.next/
+.vercel/
+.convex/
+
+# Env
+.env
+.env.*
+!.env.example
+
+# Local scratch
+LEDGER.md
+.DS_Store
