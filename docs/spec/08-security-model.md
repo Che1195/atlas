@@ -53,6 +53,7 @@ This invariant is written in the header comment of `convex/lib/auth.ts` and enfo
 |---|---|
 | Open signup (anyone can create an account) | Before the URL leaves the owner's hands → invite-gate or allowlist |
 | No email verification | Same trigger |
+| No passkeys (Clerk Pro-tier; email OTP only) | Clerk plan upgrade, or before any non-owner user |
 | Bearer keys instead of OAuth for MCP | If any third-party (non-Claude) client integration is wanted |
 | No client-side encryption | If positioning ever becomes "we cannot read your data" |
 | Single Convex region | Not expected to change for a personal tool |

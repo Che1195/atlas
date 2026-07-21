@@ -9,6 +9,7 @@ Two authentication planes, deliberately separate:
 
 - **Instance per environment:** dev instance (dev Convex + previews) and prod instance (production), keys in Vercel/Convex env vars respectively.
 - **Sign-in methods:** email code (OTP) + passkeys. No passwords (nothing to breach, nothing to forget). Google OAuth optional-on, decided at setup; adding later is trivial, removing later strands accounts — start with email+passkey only.
+  - *Deviation (2026-07-21):* passkeys are a Clerk Pro-tier feature; the dev instance runs email code only for now. Revisit alongside the accepted-risk register triggers (08 §6) or if the plan upgrades.
 - **Progressive sign-up field:** display name required at signup (playbook identity rule — email-prefix fallbacks fossilize). Stored in Clerk *and* mirrored to `users.displayName`.
 - **Session:** 30-day lifetime, rolling. PWA standalone mode keeps the Clerk session in the PWA storage container — the playbook's Safari/PWA container split means sign-in must be completed *inside* the installed PWA at least once; onboarding copy says so explicitly.
 
