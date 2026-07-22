@@ -256,13 +256,12 @@ describe('authz matrix', () => {
     expect(JSON.parse(result.content[0]!.text).code).toBe('forbidden_scope');
   });
 
-  it('unsupported OAuth token format -> 401 unauthorized with unsupported_token detail (Task 5 seam)', async () => {
+  it('unknown atlas_oat_ token -> 401 unauthorized (Task 5: OAuth grants now resolve, but this hash matches nothing)', async () => {
     const t = convexTest(schema, modules);
     const response = await rpc(t, 'atlas_oat_' + randomHex(20), 'tools/list');
     expect(response.status).toBe(401);
-    const body = (await response.json()) as { error: { code: string; details?: { reason?: string } } };
+    const body = (await response.json()) as { error: { code: string } };
     expect(body.error.code).toBe('unauthorized');
-    expect(body.error.details?.reason).toBe('unsupported_token');
   });
 });
 

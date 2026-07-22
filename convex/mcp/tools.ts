@@ -124,7 +124,7 @@ export type ToolDef = {
     ctx: ActionCtx,
     userId: Id<'users'>,
     args: Record<string, unknown>,
-    keyId: Id<'apiKeys'>,
+    keyId: Id<'apiKeys'> | Id<'oauthGrants'>,
   ) => Promise<unknown>;
 };
 

@@ -72,7 +72,11 @@ function structuredErrorContent(error: StructuredError) {
 
 async function handleToolsCall(
   ctx: ActionCtx,
-  auth: { userId: import('../_generated/dataModel').Id<'users'>; scopes: Scope[]; keyId: import('../_generated/dataModel').Id<'apiKeys'> },
+  auth: {
+    userId: import('../_generated/dataModel').Id<'users'>;
+    scopes: Scope[];
+    keyId: import('../_generated/dataModel').Id<'apiKeys'> | import('../_generated/dataModel').Id<'oauthGrants'>;
+  },
   id: JsonRpcId | undefined,
   params: unknown,
 ): Promise<Response> {

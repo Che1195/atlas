@@ -233,6 +233,50 @@ export default defineSchema({
     promptVersion: v.string(),
   }).index('by_user_period', ['userId', 'period', 'rangeStart']),
 
+  // OAuth 2.1 + DCR authorization server (Phase M Task 5, docs/spec/06 §1, ADR-0012).
+  // `oauthClients` rows are the result of open Dynamic Client Registration
+  // (RFC 7591) — not user-owned (any registered client's metadata is shown to
+  // whichever user consents at /oauth/authorize, same as any OAuth AS). Public
+  // clients only (`tokenEndpointAuthMethod: 'none'`) — Atlas never stores a
+  // client secret.
+  oauthClients: defineTable({
+    clientId: v.string(),
+    name: v.string(),
+    redirectUris: v.array(v.string()),
+    tokenEndpointAuthMethod: v.literal('none'),
+  }).index('by_clientId', ['clientId']),
+
+  // One row per authorization grant (one consent -> one row, reused across the
+  // code exchange and subsequent refresh rotations). `codeHash`/`codeExpiresAt`/
+  // `codeChallenge` are cleared (undefined) the moment the code is exchanged —
+  // single-use by construction. `accessTokenHash`/`refreshTokenHash` are hashed
+  // the same way as apiKeys.keyHash; lookup indexes are GLOBAL (not userId-led),
+  // exactly like `apiKeys.by_hash` — a hash lookup verifies nothing else about
+  // the caller, so there is nothing for a userId prefix to add (08 §3).
+  // `rateWindowStart`/`rateWindowCount` mirror apiKeys' fixed-window rate-limit
+  // fields (convex/lib/rateLimit.ts) so atlas_oat_ tokens are rate-limited the
+  // same way atlas_sk_ keys are; `lastUsedAt` is intentionally NOT tracked here
+  // (06 §4's Connections-screen "last used" is a bearer-key-only affordance —
+  // OAuth grants have no analogous UI need yet).
+  oauthGrants: defineTable({
+    userId: v.id('users'),
+    clientId: v.string(),
+    scopes: v.array(v.union(v.literal('read'), v.literal('capture'), v.literal('propose'))),
+    codeHash: v.optional(v.string()),
+    codeExpiresAt: v.optional(v.number()),
+    codeChallenge: v.optional(v.string()),
+    redirectUri: v.optional(v.string()),
+    accessTokenHash: v.optional(v.string()),
+    refreshTokenHash: v.optional(v.string()),
+    revokedAt: v.optional(v.number()),
+    rateWindowStart: v.optional(v.number()),
+    rateWindowCount: v.optional(v.number()),
+  })
+    .index('by_user', ['userId'])
+    .index('by_codeHash', ['codeHash'])
+    .index('by_accessTokenHash', ['accessTokenHash'])
+    .index('by_refreshTokenHash', ['refreshTokenHash']),
+
   apiKeys: defineTable({
     userId: v.id('users'),
     name: v.string(),

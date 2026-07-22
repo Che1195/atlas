@@ -7,10 +7,9 @@
 // requires as its first param (08 §2).
 import { v } from 'convex/values';
 import { internalMutation, internalQuery } from '../_generated/server';
+import { checkRateLimit, RATE_LIMIT_MAX_PER_WINDOW, RATE_LIMIT_WINDOW_MS, type RateLimitResult } from '../lib/rateLimit';
 
-/** Fixed window: 60 requests/min per key (06 §1). */
-export const RATE_LIMIT_WINDOW_MS = 60_000;
-export const RATE_LIMIT_MAX_PER_WINDOW = 60;
+export { RATE_LIMIT_MAX_PER_WINDOW, RATE_LIMIT_WINDOW_MS };
 /** lastUsedAt bump throttle — once per minute is enough for the Connections screen. */
 const LAST_USED_THROTTLE_MS = 60_000;
 
@@ -25,10 +24,6 @@ export const findByHash = internalQuery({
   },
 });
 
-export type RateLimitResult =
-  | { allowed: true }
-  | { allowed: false; retryAfterSeconds: number };
-
 /**
  * Fixed-window rate check + throttled lastUsedAt bump, in one mutation so the
  * read-then-patch is atomic within Convex's single-writer-per-document model.
@@ -40,28 +35,17 @@ export const recordUse = internalMutation({
   args: { keyId: v.id('apiKeys'), now: v.number() },
   handler: async (ctx, args): Promise<RateLimitResult> => {
     const row = await ctx.db.get(args.keyId);
-    if (row === null) return { allowed: true }; // defensive; caller already validated existence
+    // Defensive; caller already validated existence.
+    if (row === null) return { allowed: true, patch: { rateWindowStart: args.now, rateWindowCount: 1 } };
 
-    const windowStart = row.rateWindowStart;
-    const withinWindow = windowStart !== undefined && args.now - windowStart < RATE_LIMIT_WINDOW_MS;
-    const currentCount = withinWindow ? (row.rateWindowCount ?? 0) : 0;
+    const result = checkRateLimit(row, args.now);
+    if (!result.allowed) return result;
 
-    if (withinWindow && currentCount >= RATE_LIMIT_MAX_PER_WINDOW) {
-      const retryAfterSeconds = Math.max(
-        1,
-        Math.ceil((windowStart! + RATE_LIMIT_WINDOW_MS - args.now) / 1000),
-      );
-      return { allowed: false, retryAfterSeconds };
-    }
-
-    const patch: Record<string, unknown> = {
-      rateWindowStart: withinWindow ? windowStart : args.now,
-      rateWindowCount: currentCount + 1,
-    };
+    const patch: Record<string, unknown> = { ...result.patch };
     if (row.lastUsedAt === undefined || args.now - row.lastUsedAt >= LAST_USED_THROTTLE_MS) {
       patch.lastUsedAt = args.now;
     }
     await ctx.db.patch(args.keyId, patch);
-    return { allowed: true };
+    return result;
   },
 });

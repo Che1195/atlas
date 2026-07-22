@@ -13,7 +13,15 @@ import type { StructuredError } from './errors';
 
 export type Scope = 'read' | 'capture' | 'propose';
 
-export type ResolvedAuth = { userId: Id<'users'>; scopes: Scope[]; keyId: Id<'apiKeys'> };
+// keyId is either an apiKeys row id (bearer path) or an oauthGrants row id
+// (OAuth path, Phase M Task 5) — both are opaque strings to every downstream
+// consumer (e.g. atlas_submit_proposal's runId string interpolation), so a
+// union costs nothing at call sites while keeping each auth path's own id type.
+export type ResolvedAuth = {
+  userId: Id<'users'>;
+  scopes: Scope[];
+  keyId: Id<'apiKeys'> | Id<'oauthGrants'>;
+};
 
 export type AuthFailure = {
   httpStatus: 401 | 429;
@@ -68,12 +76,46 @@ async function resolveBearerKey(ctx: ActionCtx, token: string): Promise<AuthResu
 }
 
 /**
- * Seam for Task 5 (OAuth 2.1 + DCR): `atlas_oat_` access tokens will hash-lookup
- * against `oauthGrants` the same way bearer keys hash-lookup against `apiKeys`.
- * Until that table exists, any `atlas_oat_` token resolves to a structured 401 so
- * a connector attempting the OAuth path today gets an honest, typed refusal
- * rather than a generic parse failure.
+ * OAuth access-token resolution (Phase M Task 5, docs/spec/06 §1): `atlas_oat_`
+ * tokens hash-lookup against `oauthGrants.by_accessTokenHash` the same way
+ * bearer keys hash-lookup against `apiKeys.by_hash` — a global (non-userId-led)
+ * index, since the hash itself is the only thing that needs verifying (08 §3).
+ * `keyId` carries the grant id so atlas_submit_proposal's idempotence runId
+ * still has a stable per-credential identifier to key off of.
  */
+async function resolveOAuthToken(ctx: ActionCtx, token: string): Promise<AuthResult> {
+  const tokenHash = await sha256Hex(token);
+  const grant = await ctx.runQuery(internal.internal.oauthStore.findGrantByAccessTokenHash, {
+    accessTokenHash: tokenHash,
+  });
+  if (grant === null || grant.revokedAt !== undefined) {
+    return unauthorized('Invalid or revoked access token.');
+  }
+
+  const rateResult = await ctx.runMutation(internal.internal.oauthStore.recordUse, {
+    grantId: grant._id,
+    now: Date.now(),
+  });
+  if (!rateResult.allowed) {
+    return {
+      ok: false,
+      failure: {
+        httpStatus: 429,
+        error: {
+          code: 'rate_limited',
+          message: `Rate limit exceeded (${RATE_LIMIT_MAX_PER_WINDOW}/min). Retry after the window resets.`,
+        },
+        retryAfterSeconds: rateResult.retryAfterSeconds,
+      },
+    };
+  }
+
+  return {
+    ok: true,
+    auth: { userId: grant.userId, scopes: grant.scopes as Scope[], keyId: grant._id },
+  };
+}
+
 export async function resolveAuth(ctx: ActionCtx, request: Request): Promise<AuthResult> {
   const header = request.headers.get('authorization') ?? request.headers.get('Authorization');
   if (header === null) return unauthorized('Missing Authorization header.');
@@ -86,9 +128,7 @@ export async function resolveAuth(ctx: ActionCtx, request: Request): Promise<Aut
     return resolveBearerKey(ctx, token);
   }
   if (token.startsWith('atlas_oat_')) {
-    return unauthorized('OAuth access tokens are not yet supported on this server.', {
-      reason: 'unsupported_token',
-    });
+    return resolveOAuthToken(ctx, token);
   }
   return unauthorized('Unrecognized token format.');
 }
