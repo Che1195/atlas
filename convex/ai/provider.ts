@@ -6,8 +6,19 @@ export function getProviderKind(env: Record<string, string | undefined>): 'stub'
   return env.AI_PROVIDER === 'stub' ? 'stub' : 'live';
 }
 
-/** Canned distillation: one conservative observation with the entry as evidence-to-be. */
-export function stubDistillation(entryBody: string): { ops: unknown[]; rationale: string } {
+/**
+ * Canned distillation: one conservative observation with the entry as evidence-to-be.
+ * Body exactly 'skip' is the test/E2E trivial-empty path (AC-3.1's "nothing worth
+ * proposing") — returns an empty ops array instead of the canned observation.
+ */
+export function stubDistillation(entryBody: string): {
+  ops: unknown[];
+  rationale: string;
+  citations: { excerpt: string }[];
+} {
+  if (entryBody === 'skip') {
+    return { ops: [], rationale: 'nothing to propose', citations: [] };
+  }
   const excerpt = entryBody.slice(0, 80);
   return {
     ops: [
@@ -18,5 +29,6 @@ export function stubDistillation(entryBody: string): { ops: unknown[]; rationale
       },
     ],
     rationale: 'Stub provider: one conservative observation from the entry opening.',
+    citations: [{ excerpt: entryBody.slice(0, 60) }],
   };
 }

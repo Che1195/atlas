@@ -168,6 +168,42 @@ export const ISOLATION_CASES: IsolationCase[] = [
     },
   },
   {
+    fn: 'entries.requestDistill',
+    run: async (t, accessor) => {
+      const entryIdA = await seedEntryForA(t);
+      const asB = t.withIdentity({ subject: accessor.subject, name: 'User B' });
+      const api = await apiOf();
+      await asB.mutation(api.account.ensureUser, { timezone: 'UTC' });
+      let leaked = false;
+      try {
+        await asB.mutation(api.entries.requestDistill, { id: entryIdA as never });
+        leaked = true;
+      } catch {
+        // expected
+      }
+      if (leaked) {
+        throw new Error('entries.requestDistill scheduled a distill run on another user’s entry');
+      }
+    },
+  },
+  {
+    fn: 'entries.distillStatus',
+    run: async (t, accessor) => {
+      const entryIdA = await seedEntryForA(t);
+      const asB = t.withIdentity({ subject: accessor.subject, name: 'User B' });
+      const api = await apiOf();
+      await asB.mutation(api.account.ensureUser, { timezone: 'UTC' });
+      let leaked = false;
+      try {
+        await asB.query(api.entries.distillStatus, { id: entryIdA as never });
+        leaked = true;
+      } catch {
+        // expected: uniform not_found
+      }
+      if (leaked) throw new Error('entries.distillStatus returned another user’s status');
+    },
+  },
+  {
     fn: 'knowledge.create',
     run: async (t, accessor) => {
       await seedKnowledgeForA(t);
