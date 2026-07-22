@@ -53,6 +53,25 @@ async function seedProposalForA(t: T): Promise<{ proposalId: string; entryId: st
   return { proposalId, entryId };
 }
 
+/** Create an API key owned by user A via the real (action-based) create path; returns its id. */
+async function seedApiKeyForA(t: T): Promise<{ id: string }> {
+  const api = await apiOf();
+  const result = await t.withIdentity(USER_A).action(api.apiKeys.create, { name: 'A key', scopes: ['read'] });
+  return { id: result.id };
+}
+
+/** Insert a registered OAuth client directly (DCR itself is a plain httpAction, not a public function). */
+async function seedOAuthClient(t: T, clientId: string): Promise<void> {
+  await t.run(async (ctx) => {
+    await ctx.db.insert('oauthClients', {
+      clientId,
+      name: 'Iso Test Client',
+      redirectUris: ['https://example.com/callback'],
+      tokenEndpointAuthMethod: 'none',
+    });
+  });
+}
+
 export type IsolationCase = {
   /** "module.function" — must match an api export */
   fn: string;
@@ -412,6 +431,150 @@ export const ISOLATION_CASES: IsolationCase[] = [
         // expected
       }
       if (leaked) throw new Error('proposals.resolve applied another user’s proposal');
+    },
+  },
+  {
+    fn: 'apiKeys.create',
+    run: async (t, accessor) => {
+      const api = await apiOf();
+      const asB = t.withIdentity({ subject: accessor.subject, name: 'User B' });
+      await asB.mutation(api.account.ensureUser, { timezone: 'UTC' });
+      const created = await asB.action(api.apiKeys.create, { name: 'B key', scopes: ['read'] });
+      const userB = await t.run(async (ctx) =>
+        ctx.db
+          .query('users')
+          .withIndex('by_clerkId', (q) => q.eq('clerkId', accessor.subject))
+          .unique(),
+      );
+      const row = await t.run(async (ctx) => ctx.db.get(created.id as never));
+      if (row === null || (row as { userId: string }).userId !== userB!._id) {
+        throw new Error('apiKeys.create created a key scoped to the wrong user');
+      }
+    },
+  },
+  {
+    fn: 'apiKeys.list',
+    run: async (t, accessor) => {
+      await seedApiKeyForA(t);
+      const api = await apiOf();
+      const asB = t.withIdentity({ subject: accessor.subject, name: 'User B' });
+      await asB.mutation(api.account.ensureUser, { timezone: 'UTC' });
+      const listB = await asB.query(api.apiKeys.list, {});
+      if (listB.length !== 0) throw new Error('apiKeys.list leaked another user’s keys');
+    },
+  },
+  {
+    fn: 'apiKeys.revoke',
+    run: async (t, accessor) => {
+      const { id } = await seedApiKeyForA(t);
+      const api = await apiOf();
+      const asB = t.withIdentity({ subject: accessor.subject, name: 'User B' });
+      await asB.mutation(api.account.ensureUser, { timezone: 'UTC' });
+      let leaked = false;
+      try {
+        await asB.mutation(api.apiKeys.revoke, { id: id as never });
+        leaked = true;
+      } catch {
+        // expected
+      }
+      if (leaked) throw new Error('apiKeys.revoke revoked another user’s key');
+    },
+  },
+  {
+    fn: 'oauth.grants.getClient',
+    run: async (t, accessor) => {
+      // oauthClients rows aren't user-owned (open DCR — any authenticated user
+      // may see any registered client's public name/redirect_uris, same as any
+      // OAuth AS's consent screen); the invariant here is just that it requires
+      // auth and resolves the row correctly, not that it hides it from B.
+      const clientId = 'iso-test-client-getClient';
+      await seedOAuthClient(t, clientId);
+      const api = await apiOf();
+      const asB = t.withIdentity({ subject: accessor.subject, name: 'User B' });
+      await asB.mutation(api.account.ensureUser, { timezone: 'UTC' });
+      const result = await asB.query(api.oauth.grants.getClient, { clientId });
+      if (result === null || result.name !== 'Iso Test Client') {
+        throw new Error('oauth.grants.getClient did not resolve the shared, non-owned client row');
+      }
+    },
+  },
+  {
+    fn: 'oauth.grants.approveGrant',
+    run: async (t, accessor) => {
+      const clientId = 'iso-test-client-approveGrant';
+      await seedOAuthClient(t, clientId);
+      const api = await apiOf();
+      const asB = t.withIdentity({ subject: accessor.subject, name: 'User B' });
+      await asB.mutation(api.account.ensureUser, { timezone: 'UTC' });
+      await asB.action(api.oauth.grants.approveGrant, {
+        clientId,
+        redirectUri: 'https://example.com/callback',
+        scopes: ['read'],
+        codeChallenge: 'abc123',
+      });
+      const userB = await t.run(async (ctx) =>
+        ctx.db
+          .query('users')
+          .withIndex('by_clerkId', (q) => q.eq('clerkId', accessor.subject))
+          .unique(),
+      );
+      const grants = await t.run(async (ctx) =>
+        ctx.db
+          .query('oauthGrants')
+          .filter((q) => q.eq(q.field('clientId'), clientId))
+          .collect(),
+      );
+      if (grants.length !== 1 || grants[0]!.userId !== userB!._id) {
+        throw new Error('oauth.grants.approveGrant issued a grant for the wrong user');
+      }
+    },
+  },
+  {
+    fn: 'oauth.grants.listMine',
+    run: async (t, accessor) => {
+      const clientId = 'iso-test-client-listMine';
+      await seedOAuthClient(t, clientId);
+      const api = await apiOf();
+      await t.withIdentity(USER_A).action(api.oauth.grants.approveGrant, {
+        clientId,
+        redirectUri: 'https://example.com/callback',
+        scopes: ['read'],
+        codeChallenge: 'abc123',
+      });
+      const asB = t.withIdentity({ subject: accessor.subject, name: 'User B' });
+      await asB.mutation(api.account.ensureUser, { timezone: 'UTC' });
+      const listB = await asB.query(api.oauth.grants.listMine, {});
+      if (listB.length !== 0) throw new Error('oauth.grants.listMine leaked another user’s grants');
+    },
+  },
+  {
+    fn: 'oauth.grants.revokeMine',
+    run: async (t, accessor) => {
+      const clientId = 'iso-test-client-revokeMine';
+      await seedOAuthClient(t, clientId);
+      const api = await apiOf();
+      await t.withIdentity(USER_A).action(api.oauth.grants.approveGrant, {
+        clientId,
+        redirectUri: 'https://example.com/callback',
+        scopes: ['read'],
+        codeChallenge: 'abc123',
+      });
+      const grant = await t.run(async (ctx) =>
+        ctx.db
+          .query('oauthGrants')
+          .filter((q) => q.eq(q.field('clientId'), clientId))
+          .unique(),
+      );
+      const asB = t.withIdentity({ subject: accessor.subject, name: 'User B' });
+      await asB.mutation(api.account.ensureUser, { timezone: 'UTC' });
+      let leaked = false;
+      try {
+        await asB.mutation(api.oauth.grants.revokeMine, { id: grant!._id as never });
+        leaked = true;
+      } catch {
+        // expected
+      }
+      if (leaked) throw new Error('oauth.grants.revokeMine revoked another user’s grant');
     },
   },
 ];

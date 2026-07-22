@@ -1,14 +1,16 @@
 # 06 — MCP Interface
 
-Atlas exposes one MCP server over Streamable HTTP at `https://<convex-deployment>.convex.site/mcp`, implemented as a Convex `httpAction` using the MCP TypeScript SDK. It is the *only* external programmatic surface (no parallel REST API in MVP). In the MVP, an MCP client (Claude app / Claude Code) **is** Hermes (07-hermes).
+Atlas exposes one MCP server over Streamable HTTP at `https://<convex-deployment>.convex.site/mcp`, implemented as a Convex `httpAction` using the MCP TypeScript SDK. It is the *only* external programmatic surface (no parallel REST API in MVP). An MCP client — the ChatGPT app (via its connector), Codex CLI, or any other MCP-capable agent — **is** Hermes (07-hermes).
 
 ## 1. Authentication & scoping
 
-- Bearer token: `Authorization: Bearer atlas_sk_<40 hex>`. Keys are created in Settings → Connections, shown once, stored as SHA-256 hash (`apiKeys` table), revocable, per-client-named.
-- Key → user resolution on every request; all downstream calls execute with that user's id through the same domain functions as the app. A leaked key exposes only that user's data and only within its scopes.
-- Scopes: `read` (search/get/list), `capture` (create entries), `propose` (submit proposals). Default key = all three; a read-only key is one toggle.
-- Rate limit: 60 requests/min per key, enforced in the httpAction (fixed-window counter); 429 with `Retry-After`.
-- OAuth (Dynamic Client Registration) is post-MVP; bearer keys are adequate for a personal tool and vastly simpler (ADR-0007 notes the upgrade path).
+Two auth modes resolve to the same `{userId, scopes}` model and the same tool registry — no client gets a different Atlas.
+
+- **Bearer key** (header-capable agents: Codex CLI, other MCP agents): `Authorization: Bearer atlas_sk_<40 hex>`. Keys are created in Settings → Connections, shown once, stored as SHA-256 hash (`apiKeys` table), revocable, per-client-named.
+- **OAuth 2.1 + Dynamic Client Registration** (connector-only clients: ChatGPT, which mandates OAuth and does not accept bearer tokens — ADR-0012): Atlas runs an authorization server exposing `/.well-known/oauth-authorization-server` (RFC 8414) and `/.well-known/oauth-protected-resource` (RFC 9728) metadata, open Dynamic Client Registration (`/oauth/register`, RFC 7591), and an `/oauth/authorize` consent screen (Clerk-authed, shows client name + requested scopes) → `/oauth/token` code exchange with mandatory PKCE (S256). Access tokens (`atlas_oat_<40 hex>`) are hashed the same way as bearer keys; refresh tokens rotate on use; authorization codes are single-use with a ≤60s TTL.
+- Key/token → user resolution on every request; all downstream calls execute with that user's id through the same domain functions as the app. A leaked key or token exposes only that user's data and only within its scopes.
+- Scopes: `read` (search/get/list), `capture` (create entries), `propose` (submit proposals). Default key = all three; a read-only key is one toggle. OAuth grants carry the same scope set, chosen at consent time.
+- Rate limit: 60 requests/min per key or access token, enforced in the httpAction (fixed-window counter); 429 with `Retry-After`.
 
 ## 2. Design rules (agent-facing surface)
 
@@ -31,7 +33,7 @@ Atlas exposes one MCP server over Streamable HTTP at `https://<convex-deployment
 
 **`atlas_list_experiments`** — `{ status? }` → experiments with tested-object statement and latest outcome.
 
-**`atlas_list_reviews`** / **`atlas_get_review`** — generated reviews (structured sections + prose).
+**`atlas_list_reviews`** / **`atlas_get_review`** — generated reviews (structured sections + prose). These ship once reviews exist (12-roadmap Phase 6) — deferred out of the initial tool set, which has no reviews to serve.
 
 **`atlas_retrieve_context`** — `{ question: string, limit?: number≤20 }` → the Ask retrieval bundle: `{ knowledge: [...], entries: [{ id, excerpt }], relationships: [...] }` ranked by relevance, **no synthesis**. The calling assistant reasons over it itself; Atlas doesn't spend tokens generating an answer another LLM will re-generate.
 

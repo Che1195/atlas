@@ -60,7 +60,7 @@ List by period; unread marked with a dot. Review detail renders `sections` nativ
 One input, two result modes: instant list results (knowledge + entries, hybrid search) while typing; **Ask** button runs synthesis → answer paragraph with citation chips linking to objects/entries. Recent asks kept locally (not a server-side history feature).
 
 ### Settings
-Profile (name, timezone) · AI (auto-distill toggle + "each auto-distillation costs tokens" honesty, review cadence, budget usage today) · **Connections** (MCP keys: create/named/shown-once/revoke; setup snippets for Claude app & Claude Code) · Export (one tap → JSON download) · Issue inbox (file issue + screenshot; see resolutions, verify/reopen) · Danger zone (delete account, typed confirmation).
+Profile (name, timezone) · AI (auto-distill toggle + "each auto-distillation costs tokens" honesty, review cadence, budget usage today) · **Connections** (MCP keys: create/named/shown-once/revoke; OAuth grants list + revoke; setup snippets for the ChatGPT connector (OAuth) & Codex/agents (bearer key)) · Export (one tap → JSON download) · Issue inbox (file issue + screenshot; see resolutions, verify/reopen) · Danger zone (delete account, typed confirmation).
 
 ## 4. Cross-cutting UX rules
 

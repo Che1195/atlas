@@ -106,9 +106,12 @@ describe('internal/testing.clearTestUser', () => {
 
   // Guards against silent drift: a table added to schema but forgotten in
   // OWNED_TABLES would leak that table's rows for deleted test users.
-  it('OWNED_TABLES stays in sync with the schema (except users/crashes)', () => {
+  // oauthClients is excluded like users/crashes: it has no userId field at all
+  // (Phase M Task 5 — open DCR registrations aren't owned by any one user), so
+  // there's nothing for the userId-filtered sweep to match.
+  it('OWNED_TABLES stays in sync with the schema (except users/crashes/oauthClients)', () => {
     const schemaTables = Object.keys(schema.tables).filter(
-      (table) => table !== 'users' && table !== 'crashes',
+      (table) => table !== 'users' && table !== 'crashes' && table !== 'oauthClients',
     );
     const owned = new Set<string>(OWNED_TABLES);
     const missingFromOwned = schemaTables.filter((table) => !owned.has(table));

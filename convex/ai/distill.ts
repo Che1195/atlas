@@ -90,8 +90,19 @@ export const run = internalAction({
 
       let result: ProviderResult;
 
-      if (getProviderKind(process.env) === 'stub' || !process.env.OPENAI_API_KEY) {
+      if (getProviderKind(process.env) === 'stub') {
         result = stubDistillation(inputs.entry.body);
+      } else if (!process.env.OPENAI_API_KEY) {
+        // Live path with no key configured: honest refusal, no provider call —
+        // same start()/finish() discipline as the budget-refusal path above.
+        await ctx.runMutation(internal.internal.aiRuns.finish, {
+          id: runRowId,
+          status: 'error',
+          inputTokens,
+          outputTokens,
+          error: 'no_provider',
+        });
+        return null;
       } else {
         const { system, user } = buildDistillPrompt({
           entryBody: inputs.entry.body,

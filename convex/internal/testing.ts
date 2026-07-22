@@ -15,6 +15,7 @@ export const OWNED_TABLES = [
   'proposals',
   'reviews',
   'apiKeys',
+  'oauthGrants',
   'aiRuns',
   'issues',
 ] as const;

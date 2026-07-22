@@ -3,7 +3,7 @@
 Two authentication planes, deliberately separate:
 
 1. **Humans → PWA:** Clerk (ADR-0003).
-2. **Machines (Hermes/MCP clients) → Convex:** Atlas-issued bearer API keys (06 §1, 08 §3).
+2. **Machines (Hermes/MCP clients) → Convex:** Atlas-issued bearer API keys for header-capable agents, or OAuth 2.1 + DCR for connector-only clients like ChatGPT (06 §1, 08 §3, ADR-0012) — both resolve to the same `{userId, scopes}` model.
 
 ## 1. Clerk configuration
 
@@ -42,7 +42,7 @@ Standard JWT integration:
 |---|---|---|
 | PWA pages | Clerk session | Next.js middleware redirect to sign-in |
 | Convex public functions | Clerk JWT | `requireUser(ctx)` — every function, no exceptions |
-| Convex `/mcp` httpAction | API key | hash lookup + scope check per tool |
+| Convex `/mcp` httpAction | API key or OAuth access token | hash lookup + scope check per tool (ADR-0012) |
 | Convex internal functions | trusted callers only | not exported to clients; take explicit `userId` first param |
 | Issue/crash write endpoints | Clerk JWT (crash: also pre-auth allowed with null user) | crash reports must survive auth failures |
 | Ops/admin panel (owner) | Clerk JWT + `OWNER_CLERK_ID` env check | single-owner admin; no roles system in MVP |
@@ -52,4 +52,4 @@ Standard JWT integration:
 - **Signup:** Clerk flow → `ensureUser` → onboarding (timezone confirm, review cadence defaults, capture-first empty state).
 - **Permanent choices:** none at signup besides identity itself (deliberate — no role/type forks to regret). Account deletion is the one irreversible action and gets the full confirm treatment (typed confirmation + "this is permanent" copy).
 - **Deletion:** `account.deleteAccount` purges Convex rows (08 §4) then deletes the Clerk user via backend SDK from a Convex action.
-- **MCP keys:** managed in Settings → Connections (create named key, shown once; list with prefix + lastUsed; revoke). Creating keys requires a fresh Clerk session (< 10 min since auth) — cheap step-up for the highest-value credential.
+- **MCP keys & OAuth grants:** managed in Settings → Connections (create named key, shown once; list with prefix + lastUsed; revoke; OAuth grants listed separately by client name/scopes/granted date, revocable). Step-up auth on key creation (fresh Clerk session, <10 min since auth) is deferred post-Phase-M (ADR-0012 Deferred list) — not required for the initial Connections ship.

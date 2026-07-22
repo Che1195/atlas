@@ -97,6 +97,16 @@ export default function EntryDetailPage() {
             AI budget reached for today — Distill will work tomorrow, your entry is saved
           </p>
         );
+      case 'unavailable':
+        return (
+          <p data-testid="entry-distill-unavailable" className="text-meta text-ink-muted">
+            Distillation happens through your connected assistant — see{' '}
+            <Link href="/connections" className="text-meridian underline">
+              Settings → Connections
+            </Link>
+            .
+          </p>
+        );
     }
   }
 
