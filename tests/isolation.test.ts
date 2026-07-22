@@ -89,4 +89,26 @@ describe('account provisioning behavior', () => {
     const meB = await t.withIdentity(USER_B).query(api.account.me, {});
     expect(meB).toBeNull();
   });
+
+  // Regression: Clerk's Convex integration token omits the `name` claim in prod
+  // (2026-07-21). The displayName arg is the designed fallback — it must work.
+  it('falls back to the displayName arg when the identity has no name claim', async () => {
+    const t = freshWorld();
+    const asNameless = t.withIdentity({ subject: 'clerk_user_nameless' });
+    await asNameless.mutation(api.account.ensureUser, {
+      timezone: 'UTC',
+      displayName: 'Abeche Ndumbi',
+    });
+    const me = await asNameless.query(api.account.me, {});
+    expect(me?.displayName).toBe('Abeche Ndumbi');
+  });
+
+  it('rejects provisioning when neither name claim nor displayName arg exists', async () => {
+    const t = freshWorld();
+    await expect(
+      t.withIdentity({ subject: 'clerk_user_nameless' }).mutation(api.account.ensureUser, {
+        timezone: 'UTC',
+      }),
+    ).rejects.toThrow();
+  });
 });

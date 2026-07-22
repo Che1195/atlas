@@ -1,25 +1,34 @@
 'use client';
 
+import { useUser } from '@clerk/nextjs';
 import { useMutation } from 'convex/react';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { api } from '@/convex/_generated/api';
 
 /**
  * Lazy provisioning (spec 09 §2): first authenticated render upserts the users
  * row with the client-detected IANA timezone. Children render only after the
  * row exists, so every downstream query can requireUser() safely.
+ *
+ * displayName is passed from Clerk's client-side user because the Convex
+ * integration's token omits the `name` claim (observed 2026-07-21); the
+ * mutation prefers the claim when present and falls back to this arg.
  */
 export function EnsureUser({ children }: { children: React.ReactNode }) {
   const ensureUser = useMutation(api.account.ensureUser);
+  const { user, isLoaded } = useUser();
   const [ready, setReady] = useState(false);
   const [failed, setFailed] = useState(false);
+  const started = useRef(false);
 
   useEffect(() => {
+    if (!isLoaded || started.current) return;
+    started.current = true;
     const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
-    ensureUser({ timezone })
+    ensureUser({ timezone, displayName: user?.fullName ?? undefined })
       .then(() => setReady(true))
       .catch(() => setFailed(true));
-  }, [ensureUser]);
+  }, [ensureUser, isLoaded, user]);
 
   if (failed) {
     return (
