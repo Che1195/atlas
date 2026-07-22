@@ -51,7 +51,8 @@ const DEFAULT_LIMIT = 20;
 async function safeVectorHits(run: () => Promise<VectorHit[]>): Promise<VectorHit[]> {
   try {
     return await run();
-  } catch {
+  } catch (error) {
+    console.error('vectorSearch failed, degrading to text-only', error);
     return [];
   }
 }
@@ -59,23 +60,31 @@ async function safeVectorHits(run: () => Promise<VectorHit[]>): Promise<VectorHi
 /**
  * Embed the query the SAME way stored rows are embedded (05 §1 — "same embedding
  * call for stored texts and search-time queries"). Returns null when the query
- * can't be embedded (live path, no OPENAI_API_KEY) — that's a degrade-to-text-only,
- * not an error (05 §5's "search falls back to full-text-only when a row's
- * embedding is missing" extends naturally to "...or the query itself").
+ * can't be embedded — either the live path with no OPENAI_API_KEY configured (a
+ * silent, expected degrade-to-text-only), or a thrown provider error on the live
+ * call (an unexpected failure, logged via console.error so it's observable in
+ * Convex logs, but STILL degrades to text-only rather than failing the whole
+ * search — 05 §5's "search falls back to full-text-only when a row's embedding
+ * is missing" extends naturally to "...or the query itself couldn't be embedded").
  */
 async function embedQuery(query: string): Promise<number[] | null> {
   if (getProviderKind(process.env) === 'stub') {
     return embedStub(query, EMBED_DIMENSIONS);
   }
   if (!process.env.OPENAI_API_KEY) return null;
-  const { default: OpenAI } = await import('openai');
-  const client = new OpenAI();
-  const response = await client.embeddings.create({
-    model: EMBED_MODEL,
-    input: query,
-    dimensions: EMBED_DIMENSIONS,
-  });
-  return response.data[0]?.embedding ?? null;
+  try {
+    const { default: OpenAI } = await import('openai');
+    const client = new OpenAI();
+    const response = await client.embeddings.create({
+      model: EMBED_MODEL,
+      input: query,
+      dimensions: EMBED_DIMENSIONS,
+    });
+    return response.data[0]?.embedding ?? null;
+  } catch (error) {
+    console.error('query embedding failed, degrading to text-only', error);
+    return null;
+  }
 }
 
 export const hybridSearch = internalAction({
@@ -169,7 +178,11 @@ export const hybridSearch = internalAction({
     }
 
     // scope: 'both' merges two independently-fused-and-capped lists — re-sort and
-    // cap once more so the combined result still respects `limit`.
-    return hits.sort((a, b) => b.score - a.score).slice(0, limit);
+    // cap once more so the combined result still respects `limit`. Deterministic
+    // tiebreak by ascending id (mirrors lib/retrieval.mergeRanked) so equal-score
+    // cross-kind ties don't depend on insertion order.
+    return hits
+      .sort((a, b) => (b.score !== a.score ? b.score - a.score : a.id.localeCompare(b.id)))
+      .slice(0, limit);
   },
 });
