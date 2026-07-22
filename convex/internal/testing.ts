@@ -20,14 +20,22 @@ const OWNED_TABLES = [
 ] as const;
 
 export const clearTestUser = internalMutation({
-  args: { clerkId: v.string() },
+  args: { clerkId: v.string(), allowEmptyEmail: v.optional(v.boolean()) },
   handler: async (ctx, args) => {
     const user = await ctx.db
       .query('users')
       .withIndex('by_clerkId', (q) => q.eq('clerkId', args.clerkId))
       .unique();
     if (user === null) return { deleted: false as const, reason: 'no such user' };
-    if (!user.email.includes('+clerk_test')) {
+    const isTestAccount = user.email.includes('+clerk_test');
+    // allowEmptyEmail is a bounded escape hatch for rows broken by the (now
+    // fixed) missing-email-claim bug: internal-only, the caller resolves
+    // clerkIds from +clerk_test Clerk accounts via the Clerk API, and post-fix
+    // no new rows have empty emails — so this only ever reaches legacy broken
+    // rows for the explicitly-addressed clerkId. It never widens the guard
+    // to arbitrary non-test accounts (see the real-email refusal below).
+    const isAllowedEmptyEmail = user.email === '' && args.allowEmptyEmail === true;
+    if (!isTestAccount && !isAllowedEmptyEmail) {
       return { deleted: false as const, reason: 'refusing: not a +clerk_test account' };
     }
 

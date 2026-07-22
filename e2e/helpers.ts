@@ -60,7 +60,12 @@ export async function deleteClerkUserIfExists(email: string): Promise<void> {
 export function precleanConvex(clerkId: string): void {
   execFileSync(
     'bunx',
-    ['convex', 'run', 'internal/testing:clearTestUser', JSON.stringify({ clerkId })],
+    [
+      'convex',
+      'run',
+      'internal/testing:clearTestUser',
+      JSON.stringify({ clerkId, allowEmptyEmail: true }),
+    ],
     { stdio: 'pipe' },
   );
 }

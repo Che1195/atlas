@@ -64,4 +64,42 @@ describe('internal/testing.clearTestUser', () => {
     });
     expect(result.deleted).toBe(false);
   });
+
+  // Regression: Clerk's Convex integration token omits the `email` claim, so
+  // legacy rows were provisioned with email === ''. allowEmptyEmail is a
+  // bounded escape hatch for those already-broken rows only.
+  it('refuses an empty-email account without allowEmptyEmail', async () => {
+    const t = convexTest(schema, modules);
+    const emptyEmailUser = { subject: 'clerk_emptyemail', name: 'No Email' };
+    await t.withIdentity(emptyEmailUser).mutation(api.account.ensureUser, { timezone: 'UTC' });
+    const result = await t.mutation(internal.internal.testing.clearTestUser, {
+      clerkId: emptyEmailUser.subject,
+    });
+    expect(result.deleted).toBe(false);
+  });
+
+  it('deletes an empty-email account when allowEmptyEmail is true', async () => {
+    const t = convexTest(schema, modules);
+    const emptyEmailUser = { subject: 'clerk_emptyemail2', name: 'No Email' };
+    const asUser = t.withIdentity(emptyEmailUser);
+    await asUser.mutation(api.account.ensureUser, { timezone: 'UTC' });
+    const result = await t.mutation(internal.internal.testing.clearTestUser, {
+      clerkId: emptyEmailUser.subject,
+      allowEmptyEmail: true,
+    });
+    expect(result.deleted).toBe(true);
+    expect(await asUser.query(api.account.me, {})).toBeNull();
+  });
+
+  it('refuses a real-email account even with allowEmptyEmail: true', async () => {
+    const world = convexTest(schema, modules);
+    const asReal = world.withIdentity(REAL_USER);
+    await asReal.mutation(api.account.ensureUser, { timezone: 'UTC' });
+    const result = await world.mutation(internal.internal.testing.clearTestUser, {
+      clerkId: REAL_USER.subject,
+      allowEmptyEmail: true,
+    });
+    expect(result.deleted).toBe(false);
+    expect(await asReal.query(api.account.me, {})).not.toBeNull();
+  });
 });
