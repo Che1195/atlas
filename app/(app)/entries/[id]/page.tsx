@@ -16,7 +16,7 @@ export default function EntryDetailPage() {
   const entry = useQuery(api.entries.get, removed ? 'skip' : { id: entryId });
   const updateEntry = useMutation(api.entries.update);
   const removeEntry = useMutation(api.entries.remove);
-  const distillStatus = useQuery(api.entries.distillStatus, { id: entryId });
+  const distillStatus = useQuery(api.entries.distillStatus, removed ? 'skip' : { id: entryId });
   const requestDistill = useMutation(api.entries.requestDistill);
   const [editing, setEditing] = useState(false);
   const [draftBody, setDraftBody] = useState('');
