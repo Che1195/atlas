@@ -224,6 +224,77 @@ export const ISOLATION_CASES: IsolationCase[] = [
       if (leaked) throw new Error('knowledge.archive mutated another user’s object');
     },
   },
+  {
+    fn: 'evidence.add',
+    run: async (t, accessor) => {
+      const knowledgeIdA = await seedKnowledgeForA(t);
+      const entryIdA = await seedEntryForA(t);
+      const asB = t.withIdentity({ subject: accessor.subject, name: 'User B' });
+      const api = await apiOf();
+      await asB.mutation(api.account.ensureUser, { timezone: 'UTC' });
+      let leaked = false;
+      try {
+        await asB.mutation(api.evidence.add, {
+          knowledgeId: knowledgeIdA as never,
+          entryId: entryIdA as never,
+          stance: 'supports',
+        });
+        leaked = true;
+      } catch {
+        // expected
+      }
+      if (leaked) throw new Error('evidence.add linked another user’s objects');
+
+      // Half-owned case: B's own entry cited against A's knowledgeId must still throw
+      // (the knowledge assertOwner fires first).
+      const entryIdB = await asB.mutation(api.entries.create, {
+        kind: 'note',
+        body: 'B entry',
+        occurredAt: 1,
+      });
+      let leakedHalfOwned = false;
+      try {
+        await asB.mutation(api.evidence.add, {
+          knowledgeId: knowledgeIdA as never,
+          entryId: entryIdB,
+          stance: 'supports',
+        });
+        leakedHalfOwned = true;
+      } catch {
+        // expected
+      }
+      if (leakedHalfOwned) {
+        throw new Error('evidence.add linked B’s entry to A’s knowledge object');
+      }
+    },
+  },
+  {
+    fn: 'evidence.remove',
+    run: async (t, accessor) => {
+      const api = await apiOf();
+      const knowledgeIdA = await seedKnowledgeForA(t);
+      const entryIdA = await seedEntryForA(t);
+      const asA = t.withIdentity(USER_A);
+      await asA.mutation(api.evidence.add, {
+        knowledgeId: knowledgeIdA as never,
+        entryId: entryIdA as never,
+        stance: 'supports',
+      });
+      const detail = await asA.query(api.knowledge.get, { id: knowledgeIdA as never });
+      const evidenceIdA = detail.evidence[0]?._id;
+
+      const asB = t.withIdentity({ subject: accessor.subject, name: 'User B' });
+      await asB.mutation(api.account.ensureUser, { timezone: 'UTC' });
+      let leaked = false;
+      try {
+        await asB.mutation(api.evidence.remove, { id: evidenceIdA as never });
+        leaked = true;
+      } catch {
+        // expected
+      }
+      if (leaked) throw new Error('evidence.remove deleted another user’s evidence row');
+    },
+  },
 ];
 
 async function apiOf() {

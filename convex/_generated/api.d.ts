@@ -10,6 +10,7 @@
 
 import type * as account from "../account.js";
 import type * as entries from "../entries.js";
+import type * as evidence from "../evidence.js";
 import type * as knowledge from "../knowledge.js";
 import type * as lib_auth from "../lib/auth.js";
 import type * as lib_confidence from "../lib/confidence.js";
@@ -26,6 +27,7 @@ import type {
 declare const fullApi: ApiFromModules<{
   account: typeof account;
   entries: typeof entries;
+  evidence: typeof evidence;
   knowledge: typeof knowledge;
   "lib/auth": typeof lib_auth;
   "lib/confidence": typeof lib_confidence;
