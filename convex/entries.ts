@@ -15,7 +15,7 @@ export const create = mutation({
   },
   handler: async (ctx, args) => {
     const user = await requireUser(ctx);
-    return await ctx.db.insert('entries', {
+    const id = await ctx.db.insert('entries', {
       userId: user._id,
       kind: args.kind,
       title: args.title,
@@ -23,6 +23,14 @@ export const create = mutation({
       occurredAt: args.occurredAt,
       source: 'app',
     });
+    // Fire-and-forget embed (docs/spec/05-ai-pipeline.md §1 "embed" — trigger:
+    // entry create/edit). Mutations schedule; the action re-verifies ownership.
+    await ctx.scheduler.runAfter(0, internal.ai.embed.run, {
+      userId: user._id,
+      targetType: 'entry',
+      targetId: id,
+    });
+    return id;
   },
 });
 
@@ -43,6 +51,15 @@ export const update = mutation({
     if (args.body !== undefined) patch.body = requireNonEmpty(args.body, 'body');
     if (args.occurredAt !== undefined) patch.occurredAt = args.occurredAt;
     await ctx.db.patch(entry._id, patch);
+    // Re-embed only when the embedded text (body) actually changed — title/kind/
+    // occurredAt edits don't touch what's embedded.
+    if (args.body !== undefined) {
+      await ctx.scheduler.runAfter(0, internal.ai.embed.run, {
+        userId: user._id,
+        targetType: 'entry',
+        targetId: entry._id,
+      });
+    }
     return null;
   },
 });

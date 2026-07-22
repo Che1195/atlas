@@ -8,6 +8,7 @@
 // confidence computation, rev bumping) is byte-identical to the pre-refactor bodies.
 
 import { ConvexError } from 'convex/values';
+import { internal } from '../_generated/api';
 import type { Doc, Id } from '../_generated/dataModel';
 import type { MutationCtx } from '../_generated/server';
 import { assertOwner } from '../lib/auth';
@@ -58,6 +59,14 @@ export async function insertKnowledge(
     rev: 1,
   });
   await writeRevision(ctx, user, id, 1, 'Created', who);
+  // Fire-and-forget embed (docs/spec/05-ai-pipeline.md §1 "embed" — trigger:
+  // knowledge create/statement-change). Every new row has a statement, so this
+  // always schedules (unlike patchKnowledge, which gates on what actually changed).
+  await ctx.scheduler.runAfter(0, internal.ai.embed.run, {
+    userId: user._id,
+    targetType: 'knowledge',
+    targetId: id,
+  });
   return id;
 }
 
@@ -81,6 +90,15 @@ export async function patchKnowledge(
   }
   await ctx.db.patch(doc._id, dbPatch);
   await writeRevision(ctx, user, doc._id, dbPatch.rev, validReason, who);
+  // Re-embed only when the embedded text (statement/body) actually changed — a
+  // type-only patch doesn't touch what's embedded.
+  if (patch.statement !== undefined || patch.body !== undefined) {
+    await ctx.scheduler.runAfter(0, internal.ai.embed.run, {
+      userId: user._id,
+      targetType: 'knowledge',
+      targetId: doc._id,
+    });
+  }
 }
 
 export async function archiveKnowledgeDoc(
