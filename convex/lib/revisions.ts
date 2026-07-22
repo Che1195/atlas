@@ -13,3 +13,18 @@ export function knowledgeSnapshot(doc: Doc<'knowledge'>) {
     origin: doc.origin,
   };
 }
+
+// Same shape discipline as knowledgeSnapshot, for the other revision target (targetType 'experiment').
+export function experimentSnapshot(doc: Doc<'experiments'>) {
+  return {
+    knowledgeId: doc.knowledgeId,
+    hypothesis: doc.hypothesis,
+    behavior: doc.behavior,
+    context: doc.context,
+    successCriteria: doc.successCriteria,
+    failureCriteria: doc.failureCriteria,
+    observationTarget: doc.observationTarget,
+    status: doc.status,
+    origin: doc.origin,
+  };
+}

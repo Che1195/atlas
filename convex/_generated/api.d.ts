@@ -20,6 +20,7 @@ import type * as lib_auth from "../lib/auth.js";
 import type * as lib_confidence from "../lib/confidence.js";
 import type * as lib_revisions from "../lib/revisions.js";
 import type * as lib_validate from "../lib/validate.js";
+import type * as ops_knowledgeWrites from "../ops/knowledgeWrites.js";
 import type * as shared_proposalOps from "../shared/proposalOps.js";
 
 import type {
@@ -41,6 +42,7 @@ declare const fullApi: ApiFromModules<{
   "lib/confidence": typeof lib_confidence;
   "lib/revisions": typeof lib_revisions;
   "lib/validate": typeof lib_validate;
+  "ops/knowledgeWrites": typeof ops_knowledgeWrites;
   "shared/proposalOps": typeof shared_proposalOps;
 }>;
 
