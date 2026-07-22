@@ -9,6 +9,7 @@
  */
 
 import type * as account from "../account.js";
+import type * as ai_provider from "../ai/provider.js";
 import type * as entries from "../entries.js";
 import type * as evidence from "../evidence.js";
 import type * as internal_testing from "../internal/testing.js";
@@ -27,6 +28,7 @@ import type {
 
 declare const fullApi: ApiFromModules<{
   account: typeof account;
+  "ai/provider": typeof ai_provider;
   entries: typeof entries;
   evidence: typeof evidence;
   "internal/testing": typeof internal_testing;
