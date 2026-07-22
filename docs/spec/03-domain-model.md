@@ -72,6 +72,10 @@ suggested =
   C > 0 && S > 2C:   mixed-leaning-supported → supported (UI shows the tension)
   C > 0 && S <= 2C:  mixed
   C >= 2 && C > S:   contradicted
+
+Precedence (first match wins): C == 0 ladder → contradicted → supported → mixed.
+(The contradicted guard must be checked before mixed: C >= 2 && C > S implies S <= 2C,
+so a top-to-bottom reading of the cases above would never reach it.)
 ```
 
 Rules:
@@ -79,6 +83,10 @@ Rules:
 - Auto-applied only while `confidenceOverridden == false`. A user override sets the flag and records a revision with reason; later evidence still recomputes the *suggestion* and the UI shows drift ("your override: supported; evidence suggests: mixed").
 - AI can never write confidence — not even via proposal ops. It adds evidence; confidence follows.
 - Repetition guard: distinct-source counting is the enforcement of "repeated summaries are not additional evidence."
+- Dedup nuance: distinct-source collapsing happens per canonical source, so two evidence rows
+  whose entries are linked by `duplicateOf` but carry OPPOSITE stances collapse to one source
+  with a single stance (implementation: last row wins). Unreachable until the retelling UI can
+  set `duplicateOf`; add a pinning test when it lands (logged 2026-07-21).
 
 ## 6. Experiment & Outcome
 
