@@ -110,6 +110,15 @@ describe('metadata endpoints', () => {
     expect(body.authorization_servers.length).toBeGreaterThan(0);
     expect(body.resource).toMatch(/\/mcp$/);
   });
+
+  it('also serves protected resource metadata at the RFC 9728 §3.1 path-inserted /mcp route', async () => {
+    const t = convexTest(schema, modules);
+    const response = await t.fetch('/.well-known/oauth-protected-resource/mcp', { method: 'GET' });
+    expect(response.status).toBe(200);
+    const body = (await response.json()) as { resource: string; authorization_servers: string[] };
+    expect(body.resource).toMatch(/\/mcp$/);
+    expect(body.authorization_servers.length).toBeGreaterThan(0);
+  });
 });
 
 describe('dynamic client registration', () => {
@@ -140,6 +149,47 @@ describe('dynamic client registration', () => {
       body: JSON.stringify({
         redirect_uris: ['https://client.example/cb'],
         token_endpoint_auth_method: 'client_secret_basic',
+      }),
+    });
+    expect(response.status).toBe(400);
+    const body = (await response.json()) as { error: string };
+    expect(body.error).toBe('invalid_client_metadata');
+  });
+
+  it('rejects more than 10 redirect_uris as invalid_client_metadata', async () => {
+    const t = convexTest(schema, modules);
+    const tooMany = Array.from({ length: 11 }, (_, i) => `https://client.example/cb${i}`);
+    const response = await t.fetch('/oauth/register', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ redirect_uris: tooMany }),
+    });
+    expect(response.status).toBe(400);
+    const body = (await response.json()) as { error: string };
+    expect(body.error).toBe('invalid_client_metadata');
+  });
+
+  it('rejects a redirect_uri over 2048 chars as invalid_client_metadata', async () => {
+    const t = convexTest(schema, modules);
+    const overlong = `https://client.example/${'a'.repeat(2048)}`;
+    const response = await t.fetch('/oauth/register', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ redirect_uris: [overlong] }),
+    });
+    expect(response.status).toBe(400);
+    const body = (await response.json()) as { error: string };
+    expect(body.error).toBe('invalid_client_metadata');
+  });
+
+  it('rejects a client_name over 200 chars as invalid_client_metadata', async () => {
+    const t = convexTest(schema, modules);
+    const response = await t.fetch('/oauth/register', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        redirect_uris: ['https://client.example/cb'],
+        client_name: 'a'.repeat(201),
       }),
     });
     expect(response.status).toBe(400);

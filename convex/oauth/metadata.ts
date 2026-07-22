@@ -5,8 +5,9 @@
 
 /** Convex sets CONVEX_SITE_URL automatically; request.url origin is the fallback
  * for local `convex dev` where that env var may be absent. This IS the issuer —
- * the AS's own identity — served from convex.site. */
-function siteOrigin(request: Request): string {
+ * the AS's own identity — served from convex.site. Exported so convex/mcp/server.ts
+ * can build the same origin for the 401 WWW-Authenticate header (Task 4/7 fix). */
+export function siteOrigin(request: Request): string {
   return process.env.CONVEX_SITE_URL ?? new URL(request.url).origin;
 }
 

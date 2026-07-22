@@ -20,6 +20,7 @@ import { resolveAuth, type Scope } from './auth';
 import { ToolError, type StructuredError } from './errors';
 import { TOOLS } from './tools';
 import type { ActionCtx } from '../_generated/server';
+import { siteOrigin } from '../oauth/metadata';
 
 const SUPPORTED_PROTOCOL_VERSIONS = ['2025-06-18', '2025-03-26', '2024-11-05'] as const;
 const DEFAULT_PROTOCOL_VERSION = '2025-06-18';
@@ -133,6 +134,15 @@ export async function handleMcpRequest(ctx: ActionCtx, request: Request): Promis
     const { httpStatus, error, retryAfterSeconds } = authResult.failure;
     const headers: Record<string, string> = { 'content-type': 'application/json' };
     if (retryAfterSeconds !== undefined) headers['Retry-After'] = String(retryAfterSeconds);
+    // RFC 9728 §5.1: a 401 from a protected resource MUST point clients at its
+    // protected-resource metadata so they can discover the AS without prior
+    // knowledge (Task 4/7 finding). Only applies to 401s — 429 rate-limiting
+    // isn't an auth challenge.
+    if (httpStatus === 401) {
+      const origin = siteOrigin(request);
+      headers['WWW-Authenticate'] =
+        `Bearer resource_metadata="${origin}/.well-known/oauth-protected-resource/mcp"`;
+    }
     return new Response(JSON.stringify({ error }), { status: httpStatus, headers });
   }
 

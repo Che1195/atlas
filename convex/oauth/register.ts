@@ -9,6 +9,13 @@ import { oauthErrorResponse } from './errors';
 import { jsonResponse } from './metadata';
 import { isValidRedirectUri } from './validate';
 
+// RFC 7591 leaves these caps to the AS; chosen generously enough for any real
+// client (a client juggling 10 redirect URIs, or a 2048-char one, is already
+// pathological) while bounding what an open, unauthenticated endpoint stores.
+const MAX_REDIRECT_URIS = 10;
+const MAX_REDIRECT_URI_LENGTH = 2048;
+const MAX_CLIENT_NAME_LENGTH = 200;
+
 export async function handleRegister(ctx: ActionCtx, request: Request): Promise<Response> {
   let body: unknown;
   try {
@@ -23,6 +30,30 @@ export async function handleRegister(ctx: ActionCtx, request: Request): Promise<
 
   if (!Array.isArray(redirect_uris) || redirect_uris.length === 0 || !redirect_uris.every((u) => typeof u === 'string')) {
     return oauthErrorResponse(400, 'invalid_redirect_uri', 'redirect_uris must be a non-empty array of strings.');
+  }
+  // Input caps (Task 5 final-review finding): an open DCR endpoint accepts
+  // registration from any client, so unbounded array/string sizes are a stored
+  // amplification vector — cap before any further validation runs.
+  if (redirect_uris.length > MAX_REDIRECT_URIS) {
+    return oauthErrorResponse(
+      400,
+      'invalid_client_metadata',
+      `redirect_uris must contain at most ${MAX_REDIRECT_URIS} entries.`,
+    );
+  }
+  if (redirect_uris.some((u) => u.length > MAX_REDIRECT_URI_LENGTH)) {
+    return oauthErrorResponse(
+      400,
+      'invalid_client_metadata',
+      `Each redirect_uri must be at most ${MAX_REDIRECT_URI_LENGTH} characters.`,
+    );
+  }
+  if (typeof client_name === 'string' && client_name.length > MAX_CLIENT_NAME_LENGTH) {
+    return oauthErrorResponse(
+      400,
+      'invalid_client_metadata',
+      `client_name must be at most ${MAX_CLIENT_NAME_LENGTH} characters.`,
+    );
   }
   if (!redirect_uris.every(isValidRedirectUri)) {
     return oauthErrorResponse(

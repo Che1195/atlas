@@ -37,6 +37,15 @@ http.route({
   handler: httpAction(async (_ctx, request) => jsonResponse(protectedResourceMetadata(request))),
 });
 
+// RFC 9728 §3.1 path-inserted form for resource `/mcp` — the WWW-Authenticate
+// `resource_metadata` value the /mcp 401 path advertises (convex/mcp/server.ts).
+// Same handler/body as the root path above; both are valid discovery locations.
+http.route({
+  path: '/.well-known/oauth-protected-resource/mcp',
+  method: 'GET',
+  handler: httpAction(async (_ctx, request) => jsonResponse(protectedResourceMetadata(request))),
+});
+
 // RFC 7591 open Dynamic Client Registration.
 http.route({
   path: '/oauth/register',

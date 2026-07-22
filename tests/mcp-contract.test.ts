@@ -227,6 +227,16 @@ describe('authz matrix', () => {
     expect(body.error.code).toBe('unauthorized');
   });
 
+  it('every 401 carries a WWW-Authenticate header pointing at protected-resource metadata (RFC 9728 §5.1)', async () => {
+    const t = convexTest(schema, modules);
+    const response = await rpc(t, undefined, 'tools/list');
+    expect(response.status).toBe(401);
+    const header = response.headers.get('WWW-Authenticate');
+    expect(header).not.toBeNull();
+    expect(header).toMatch(/^Bearer resource_metadata="/);
+    expect(header).toContain('/.well-known/oauth-protected-resource/mcp"');
+  });
+
   it('bad/unknown key -> 401', async () => {
     const t = convexTest(schema, modules);
     const response = await rpc(t, 'atlas_sk_' + randomHex(20), 'tools/list');
