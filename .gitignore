@@ -3,6 +3,7 @@ node_modules/
 .next/
 .vercel/
 .convex/
+next-env.d.ts
 
 # Env
 .env
@@ -18,3 +19,7 @@ tsconfig.tsbuildinfo
 .worktrees/
 .vercel
 .superpowers/
+
+# Playwright
+test-results/
+playwright-report/

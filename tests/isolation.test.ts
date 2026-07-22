@@ -111,4 +111,49 @@ describe('account provisioning behavior', () => {
       }),
     ).rejects.toThrow();
   });
+
+  // Regression: Clerk's Convex integration token also omits the `email` claim
+  // (found by the E2E harness, 2026-07-22). The email arg is the designed
+  // fallback — same shape as the displayName gap above.
+  it('falls back to the email arg when the identity has no email claim', async () => {
+    const t = freshWorld();
+    const asEmailless = t.withIdentity({ subject: 'clerk_user_emailless', name: 'No Email' });
+    await asEmailless.mutation(api.account.ensureUser, {
+      timezone: 'UTC',
+      email: 'noemail+clerk_test@example.com',
+    });
+    const me = await asEmailless.query(api.account.me, {});
+    expect(me?.email).toBe('noemail+clerk_test@example.com');
+  });
+
+  it('re-syncs an already-broken empty email once the arg is supplied', async () => {
+    const t = freshWorld();
+    const asEmailless = t.withIdentity({ subject: 'clerk_user_emailless2', name: 'No Email' });
+    // First call: no email claim, no email arg — row provisioned with ''.
+    await asEmailless.mutation(api.account.ensureUser, { timezone: 'UTC' });
+    const before = await asEmailless.query(api.account.me, {});
+    expect(before?.email).toBe('');
+
+    // Second call: email arg supplied — existing row should re-sync.
+    await asEmailless.mutation(api.account.ensureUser, {
+      timezone: 'UTC',
+      email: 'healed+clerk_test@example.com',
+    });
+    const after = await asEmailless.query(api.account.me, {});
+    expect(after?.email).toBe('healed+clerk_test@example.com');
+  });
+
+  // Regression: identity.email ?? args.email let an empty-string arg (falsy but
+  // not nullish) blank a healed row. args.email must be treated as absent when ''.
+  it('does not let an empty-string email arg clobber an existing email', async () => {
+    const t = freshWorld();
+    const asUser = t.withIdentity({ subject: 'clerk_user_realemail', name: 'Real Email' });
+    await asUser.mutation(api.account.ensureUser, {
+      timezone: 'UTC',
+      email: 'real+clerk_test@example.com',
+    });
+    await asUser.mutation(api.account.ensureUser, { timezone: 'UTC', email: '' });
+    const me = await asUser.query(api.account.me, {});
+    expect(me?.email).toBe('real+clerk_test@example.com');
+  });
 });

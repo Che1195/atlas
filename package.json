@@ -11,7 +11,9 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "smoke": "bash scripts/smoke.sh",
-    "pipeline": "bun run typecheck && bun run lint && bun run test"
+    "pipeline": "bun run typecheck && bun run lint && bun run test",
+    "test:e2e": "playwright test",
+    "test:e2e:batch": "playwright test --grep @batch"
   },
   "dependencies": {
     "@clerk/nextjs": "^7.5.22",
@@ -21,12 +23,15 @@
     "react-dom": "^19.2.8"
   },
   "devDependencies": {
+    "@clerk/testing": "^2.2.11",
     "@edge-runtime/vm": "^5.0.0",
+    "@playwright/test": "^1.61.1",
     "@tailwindcss/postcss": "^4.3.3",
     "@types/node": "^26.1.1",
     "@types/react": "^19.2.17",
     "@types/react-dom": "^19.2.3",
     "convex-test": "^0.0.54",
+    "dotenv": "^17.4.2",
     "eslint": "^9",
     "eslint-config-next": "^16.2.11",
     "tailwindcss": "^4.3.3",

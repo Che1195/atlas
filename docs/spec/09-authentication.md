@@ -18,7 +18,22 @@ Two authentication planes, deliberately separate:
 Standard JWT integration:
 - Clerk JWT template named `convex`; `auth.config.ts` lists the Clerk issuer domain + `applicationID: 'convex'`.
 - Client: `ConvexProviderWithClerk` wraps the app; Convex client sends the Clerk JWT; `ctx.auth.getUserIdentity()` yields the verified identity in functions.
-- **User provisioning — lazy, not webhook:** first authenticated call to `account.ensureUser` upserts the `users` row from the JWT claims (clerkId, email, name) + client-detected IANA timezone. Chosen over Clerk webhooks: no public webhook endpoint to secure, no race on first load, one fewer moving part. A webhook is added post-MVP only if profile-sync drift becomes real (email changes are rare and re-synced on `ensureUser` anyway).
+- **User provisioning — lazy, not webhook:** first authenticated call to `account.ensureUser` upserts the `users` row from the JWT claims (clerkId, email, name) + client-detected IANA timezone.
+  - *Deviation (2026-07-21):* Clerk's first-class Convex integration (which replaced JWT
+    templates — `/v1/jwt_templates` is empty) mints tokens WITHOUT the `name` claim, so
+    `identity.name` is undefined server-side. The client therefore passes
+    `displayName: user.fullName` from Clerk's client SDK as the designed fallback arg;
+    `ensureUser` still prefers the claim if it ever appears. Regression-tested
+    (tests/isolation.test.ts, "falls back to the displayName arg"). The token also omits
+    the `email` claim (found 2026-07-22 by the E2E harness — the pre-clean guard's
+    `+clerk_test` check was silently refusing on every run because `users.email` was
+    always `''`). Same fix shape: the client passes
+    `email: user.primaryEmailAddress?.emailAddress` as a fallback arg, and `ensureUser`
+    re-syncs already-broken existing rows once the arg is available. Regression-tested
+    (tests/isolation.test.ts, "falls back to the email arg" / "re-syncs an already-broken
+    empty email").
+
+  Chosen over Clerk webhooks: no public webhook endpoint to secure, no race on first load, one fewer moving part. A webhook is added post-MVP only if profile-sync drift becomes real (email changes are rare and re-synced on `ensureUser` anyway).
 - Middleware: Next.js `clerkMiddleware` protects everything except `/`, sign-in routes, and static assets. The `/mcp` surface lives on Convex's domain, not Vercel — Clerk middleware never sees it (separate plane).
 
 ## 3. Route/function authorization matrix
