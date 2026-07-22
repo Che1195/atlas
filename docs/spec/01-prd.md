@@ -77,5 +77,5 @@ Anti-metrics (must never be optimized): session count, streaks, time-in-app, ent
 | Distillation quality poor → review queue becomes spam → user abandons loop | Op-level reject with reason capture; prompt versioning + approval-rate measure; conservative distillation (fewer, better ops) |
 | Taxonomy too heavy (6 knowledge types) at capture time | AI proposes types; user never has to pick one from scratch; `interpretation` hidden in MVP UI |
 | Confidence math feels arbitrary | Confidence is a *suggestion* with the computation shown ("3 supporting sources, 1 contradicting"); user confirms |
-| MCP-first Hermes makes MVP feel headless | The PWA review queue is the product's center of gravity; MCP adds capture/retrieval from Claude, not the primary UX |
+| MCP-first Hermes makes MVP feel headless | The PWA review queue is the product's center of gravity; MCP adds capture/retrieval from the user's connected assistant (ChatGPT/Codex — ADR-0012), not the primary UX |
 | AI cost runaway from auto-distillation | Manual trigger default; auto mode opt-in with daily token budget and visible run log |

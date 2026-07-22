@@ -6,11 +6,12 @@ The vision lists 8 layers (Mobile App → Application API → Domain Layer → D
 
 ```
 ┌─────────────────────────────┐   ┌──────────────────────────────┐
-│  Next.js PWA (Vercel)       │   │  Hermes = Claude app / Code   │
-│  UI only. No business logic │   │  (post-MVP: in-app chat UI)   │
+│  Next.js PWA (Vercel)       │   │  Hermes = ChatGPT connector /  │
+│  UI only. No business logic │   │  Codex/agents (post-MVP:      │
+│                             │   │  in-app chat UI)               │
 └──────────────┬──────────────┘   └───────────────┬──────────────┘
                │ Convex client (Clerk JWT)        │ MCP (Streamable HTTP,
-               │                                  │ bearer API key)
+               │                                  │ bearer key or OAuth)
 ┌──────────────▼──────────────────────────────────▼──────────────┐
 │  CONVEX DEPLOYMENT (one per env: dev / prod)                    │
 │                                                                 │
@@ -53,7 +54,7 @@ Vision-layer → implementation mapping:
 - **Public functions** (`convex/*.ts`): every one begins by resolving `ctx.auth` → user doc; every query filters by that user's id via index. Grouped by domain: `entries.ts`, `knowledge.ts`, `proposals.ts`, `experiments.ts`, `reviews.ts`, `search.ts`, `apiKeys.ts`, `issues.ts`, `account.ts`.
 - **Internal functions**: AI pipeline actions (`ai/distill.ts`, `ai/connect.ts`, `ai/review.ts`, `ai/embed.ts`) — never callable from clients; invoked by mutations, scheduler, or crons.
 - **`convex/lib/`** (pure, no ctx, injected time): `confidence.ts`, `proposalOps.ts` (op validation + application planning), `dedup.ts`, `retrieval.ts` (rank/merge search results), `reviewSections.ts`. This is where unit tests concentrate.
-- **`/mcp` HTTP endpoint**: MCP Streamable HTTP server as a Convex `httpAction`. Authenticates bearer API key → user id, then calls the *same internal logic* as the app functions with an explicit acting-user context. No parallel implementation. (06-mcp-interface.)
+- **`/mcp` HTTP endpoint**: MCP Streamable HTTP server as a Convex `httpAction`. Authenticates via bearer API key or OAuth 2.1 access token → user id (ADR-0012), then calls the *same internal logic* as the app functions with an explicit acting-user context. No parallel implementation. (06-mcp-interface.)
 - **Crons**: hourly review-generation tick (fires per-user by local-time cadence), daily AI-budget reset, embedding backfill.
 
 ### AI providers
