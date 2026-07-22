@@ -110,7 +110,7 @@ export const run = internalAction({
           verdicts: OpVerdict[];
           input: number;
           output: number;
-          errorReason: 'truncated' | 'refusal' | null;
+          errorReason: 'truncated' | 'refusal' | 'content_filter' | null;
         }> => {
           const response = await client.responses.create({
             model: DISTILL_MODEL,
@@ -133,10 +133,21 @@ export const run = internalAction({
           // retry, masking the real (recoverable) cause.
           const truncated =
             response.status === 'incomplete' && response.incomplete_details?.reason === 'max_output_tokens';
+          // A moderation-driven incomplete response is a distinct fatal cause
+          // from truncation — it's not fixed by a same-prompt retry — so it
+          // gets its own error code rather than being folded into 'refusal'.
+          const contentFiltered =
+            response.status === 'incomplete' && response.incomplete_details?.reason === 'content_filter';
           const refused = response.output.some(
             (item) => item.type === 'message' && item.content.some((block) => block.type === 'refusal'),
           );
-          const errorReason: 'truncated' | 'refusal' | null = truncated ? 'truncated' : refused ? 'refusal' : null;
+          const errorReason: 'truncated' | 'refusal' | 'content_filter' | null = truncated
+            ? 'truncated'
+            : contentFiltered
+              ? 'content_filter'
+              : refused
+                ? 'refusal'
+                : null;
           if (errorReason !== null) {
             return { normalized: { ops: [], rationale: '', citations: [] }, verdicts: [], input, output, errorReason };
           }

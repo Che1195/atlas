@@ -16,6 +16,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { api, internal } from '../convex/_generated/api';
 import { DISTILL_MODEL, DISTILL_REASONING_EFFORT } from '../convex/ai/models';
 import { DISTILL_PROMPT_VERSION } from '../convex/ai/prompts/distill';
+import { PROPOSAL_OPS_JSON_SCHEMA } from '../convex/shared/proposalOps';
 import type { Id } from '../convex/_generated/dataModel';
 import schema from '../convex/schema';
 
@@ -83,6 +84,19 @@ function refusalResponse(usage = { input_tokens: 10, output_tokens: 5 }) {
     output: [{ type: 'message', role: 'assistant', content: [{ type: 'refusal', refusal: 'I cannot help with that.' }] }],
     status: 'completed',
     incomplete_details: null,
+    usage,
+  };
+}
+
+function contentFilterResponse(usage = { input_tokens: 10, output_tokens: 5 }) {
+  // A moderation-driven incomplete response: distinct from both truncation
+  // (recoverable via same-prompt retry) and a refusal item (no output at
+  // all here) — status is 'incomplete' with reason 'content_filter'.
+  return {
+    output_text: '',
+    output: [],
+    status: 'incomplete',
+    incomplete_details: { reason: 'content_filter' },
     usage,
   };
 }
@@ -166,7 +180,7 @@ describe('distill.run (live branch: truncation/refusal robustness)', () => {
     expect(requestArgs.text.format).toEqual({
       type: 'json_schema',
       name: 'distill_ops',
-      schema: expect.any(Object),
+      schema: PROPOSAL_OPS_JSON_SCHEMA,
       strict: true,
     });
     expect(requestArgs.input).toEqual([
@@ -179,6 +193,20 @@ describe('distill.run (live branch: truncation/refusal robustness)', () => {
     expect(requestArgs.output_config).toBeUndefined();
     expect(requestArgs.system).toBeUndefined();
     expect(requestArgs.messages).toBeUndefined();
+  });
+
+  it('a content_filter incomplete response finishes as error "content_filter" immediately — no retry, exactly 1 call', async () => {
+    const { t, asA, userId } = await provisioned();
+    const entryId = await createEntry(asA, 'I get defensive in code review.');
+    createMock.mockResolvedValueOnce(contentFilterResponse());
+
+    await t.action(internal.ai.distill.run, { userId, entryId });
+
+    expect(createMock).toHaveBeenCalledTimes(1);
+    const row = await runRow(t, entryId);
+    expect(row?.status).toBe('error');
+    expect(row?.error).toBe('content_filter');
+    expect(await asA.query(api.proposals.list, {})).toEqual([]);
   });
 });
 
