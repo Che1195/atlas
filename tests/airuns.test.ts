@@ -56,6 +56,49 @@ describe('aiRuns.start / finish', () => {
     expect(row?.outputTokens).toBe(50);
   });
 
+  it('a second finish() that omits token counts does not wipe tokens set by the first (undefined-key patch guard)', async () => {
+    const t = convexTest(schema, modules);
+    const userId = await provisionedUser(t, USER_A);
+
+    const id = await t.mutation(internal.internal.aiRuns.start, {
+      userId,
+      purpose: 'distill',
+      runId: 'distill:e-late-proposal:v1',
+      model: 'stub',
+      promptVersion: 'v1',
+    });
+
+    await t.mutation(internal.internal.aiRuns.finish, {
+      id,
+      status: 'ok',
+      inputTokens: 100,
+      outputTokens: 50,
+    });
+
+    const proposalId = await t.mutation(internal.internal.proposalStore.upsertProposal, {
+      userId,
+      source: 'distillation',
+      ops: [{ op: 'createKnowledge', type: 'insight', statement: 'Late-attached proposal' }],
+      rationale: 'because the stub said so',
+      citations: [],
+      model: 'stub',
+      promptVersion: 'v1',
+    });
+
+    // Later call attaches only a proposalId; must not clear the token counts.
+    await t.mutation(internal.internal.aiRuns.finish, {
+      id,
+      status: 'ok',
+      proposalId,
+    });
+
+    const row = await t.run(async (ctx) => ctx.db.get(id));
+    expect(row?.status).toBe('ok');
+    expect(row?.inputTokens).toBe(100);
+    expect(row?.outputTokens).toBe(50);
+    expect(row?.proposalId).toBe(proposalId);
+  });
+
   it('finish can record an error status with a message and no tokens', async () => {
     const t = convexTest(schema, modules);
     const userId = await provisionedUser(t, USER_A);

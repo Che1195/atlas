@@ -70,13 +70,16 @@ export const finish = internalMutation({
     proposalId: v.optional(v.id('proposals')),
   },
   handler: async (ctx, args) => {
-    await ctx.db.patch(args.id, {
-      status: args.status,
-      inputTokens: args.inputTokens,
-      outputTokens: args.outputTokens,
-      error: args.error,
-      proposalId: args.proposalId,
-    });
+    // Convex's db.patch treats an explicitly-undefined key as REMOVE, not
+    // leave-unchanged — so a later finish() that omits e.g. token counts
+    // (attaching a proposalId after the fact) must not wipe fields an
+    // earlier finish() already set. Only include keys the caller passed.
+    const patch: Record<string, unknown> = { status: args.status };
+    if (args.inputTokens !== undefined) patch.inputTokens = args.inputTokens;
+    if (args.outputTokens !== undefined) patch.outputTokens = args.outputTokens;
+    if (args.error !== undefined) patch.error = args.error;
+    if (args.proposalId !== undefined) patch.proposalId = args.proposalId;
+    await ctx.db.patch(args.id, patch);
   },
 });
 
