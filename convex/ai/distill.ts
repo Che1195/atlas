@@ -129,14 +129,19 @@ export const run = internalAction({
           const input = response.usage.input_tokens;
           const output = response.usage.output_tokens;
           const stopReason = response.stop_reason;
+          // Check stop_reason BEFORE ever locating/parsing a text block: real
+          // truncation of structured output arrives as a PARTIAL text block
+          // with broken JSON, not an absent one — parsing first would throw a
+          // generic SyntaxError that lands in the outer catch with no
+          // same-prompt retry, masking the real (recoverable) cause.
+          if (stopReason === 'max_tokens' || stopReason === 'refusal') {
+            return { normalized: { ops: [], rationale: '', citations: [] }, verdicts: [], input, output, stopReason };
+          }
           const textBlock = response.content.find(
             (block): block is Extract<typeof response.content[number], { type: 'text' }> =>
               block.type === 'text',
           );
           if (textBlock === undefined) {
-            if (stopReason === 'max_tokens' || stopReason === 'refusal') {
-              return { normalized: { ops: [], rationale: '', citations: [] }, verdicts: [], input, output, stopReason };
-            }
             throw new Error('distill: no text content in provider response');
           }
           const parsed = JSON.parse(textBlock.text);

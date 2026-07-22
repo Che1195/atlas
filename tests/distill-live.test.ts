@@ -60,7 +60,19 @@ function textResponse(body: Record<string, unknown>, usage = { input_tokens: 10,
 }
 
 function truncatedResponse(usage = { input_tokens: 10, output_tokens: 5 }) {
-  return { content: [], stop_reason: 'max_tokens', usage };
+  // Realistic shape: real truncation of structured output arrives as a
+  // PARTIAL text block with broken/incomplete JSON, not an absent block —
+  // this must be caught by stop_reason before ever reaching JSON.parse.
+  return {
+    content: [
+      {
+        type: 'text',
+        text: '{"ops": [{"op": "createKnowledge", "type": "observation", "statement": "I noticed I get defen',
+      },
+    ],
+    stop_reason: 'max_tokens',
+    usage,
+  };
 }
 
 function refusalResponse(usage = { input_tokens: 10, output_tokens: 5 }) {
