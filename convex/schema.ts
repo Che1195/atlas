@@ -241,6 +241,11 @@ export default defineSchema({
     scopes: v.array(v.union(v.literal('read'), v.literal('capture'), v.literal('propose'))),
     lastUsedAt: v.optional(v.number()),
     revokedAt: v.optional(v.number()),
+    // MCP rate limiting (Phase M Task 4, docs/spec/06 §1): fixed-window 60/min
+    // counter, read+patched by convex/internal/mcpAuth.ts on every authenticated
+    // request. Absent until a key's first MCP call.
+    rateWindowStart: v.optional(v.number()),
+    rateWindowCount: v.optional(v.number()),
   })
     .index('by_hash', ['keyHash'])
     .index('by_user', ['userId']),
