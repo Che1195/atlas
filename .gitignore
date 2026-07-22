@@ -16,3 +16,5 @@ tsconfig.tsbuildinfo
 
 # Local worktrees
 .worktrees/
+.vercel
+.superpowers/
