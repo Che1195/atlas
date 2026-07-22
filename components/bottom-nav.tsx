@@ -1,7 +1,9 @@
 'use client';
 
+import { useConvexAuth, useQuery } from 'convex/react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
+import { api } from '@/convex/_generated/api';
 
 const TABS = [
   { href: '/capture', label: 'Capture', testid: 'nav-capture' },
@@ -13,6 +15,9 @@ const TABS = [
 /** Static flex child, never `fixed` (playbook iOS rule). */
 export function BottomNav() {
   const pathname = usePathname();
+  const { isAuthenticated } = useConvexAuth();
+  const pendingCount = useQuery(api.proposals.pendingCount, isAuthenticated ? {} : 'skip');
+
   return (
     <nav className="flex border-t border-ink-faint bg-surface" aria-label="Primary">
       {TABS.map((tab) => {
@@ -27,6 +32,9 @@ export function BottomNav() {
             }`}
           >
             {tab.label}
+            {tab.href === '/review' && pendingCount !== undefined && pendingCount > 0 && (
+              <span data-testid="nav-review-count"> · {pendingCount}</span>
+            )}
           </Link>
         );
       })}
