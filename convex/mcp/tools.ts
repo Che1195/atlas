@@ -16,7 +16,13 @@
 import { internal } from '../_generated/api';
 import type { Id } from '../_generated/dataModel';
 import type { ActionCtx } from '../_generated/server';
-import { PROPOSAL_OPS_JSON_SCHEMA } from '../shared/proposalOps';
+// MCP_PROPOSAL_OPS_JSON_SCHEMA (not distill's PROPOSAL_OPS_JSON_SCHEMA) is the
+// schema embedded below — full six op kinds, genuinely-optional fields (no
+// null-union hack), sourceType enum ['entry','outcome']. Distill's schema is
+// narrower on purpose (OpenAI structured-outputs constraints + distill's own
+// restricted op set) — see convex/shared/proposalOps.ts's comment for the full
+// rationale for this intentional, documented asymmetry.
+import { MCP_PROPOSAL_OPS_JSON_SCHEMA } from '../shared/proposalOps';
 import { sha256Hex, type Scope } from './auth';
 import { ToolError } from './errors';
 import { allValid, checkProposalOps, parseCitations } from './proposalSupport';
@@ -348,7 +354,7 @@ export const TOOLS: ToolDef[] = [
       type: 'object',
       additionalProperties: false,
       properties: {
-        ops: PROPOSAL_OPS_JSON_SCHEMA.properties.ops,
+        ops: MCP_PROPOSAL_OPS_JSON_SCHEMA,
         rationale: { type: 'string' },
         citations: {
           type: 'array',
@@ -379,7 +385,7 @@ export const TOOLS: ToolDef[] = [
       type: 'object',
       additionalProperties: false,
       properties: {
-        ops: PROPOSAL_OPS_JSON_SCHEMA.properties.ops,
+        ops: MCP_PROPOSAL_OPS_JSON_SCHEMA,
         rationale: { type: 'string' },
         citations: {
           type: 'array',

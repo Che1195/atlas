@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
+  MCP_PROPOSAL_OPS_JSON_SCHEMA,
+  OP_KEYS,
   STATEMENT_MAX_LENGTH,
   allOpsValid,
   validateOps,
@@ -149,5 +151,89 @@ describe('validateOps', () => {
     for (const attempt of attempts) {
       expect(validateOps([attempt])[0]?.valid).toBe(false);
     }
+  });
+});
+
+// Fix (post-Task-4-review): MCP's propose tools embed MCP_PROPOSAL_OPS_JSON_SCHEMA
+// (not distill's OpenAI-structured-outputs-constrained PROPOSAL_OPS_JSON_SCHEMA).
+// This asserts that schema mirrors OP_KEYS/checkOp's allowlists exactly — all six
+// kinds, optional fields genuinely optional (absent from `required`, never a
+// null-union), so a schema-honoring client never emits a `null` that validateOps
+// then rejects.
+describe('MCP_PROPOSAL_OPS_JSON_SCHEMA', () => {
+  type JsonSchemaObject = {
+    type: 'object';
+    properties: Record<string, unknown>;
+    required?: readonly string[];
+  };
+
+  function schemaByOpConst(): Record<string, JsonSchemaObject> {
+    const byOp: Record<string, JsonSchemaObject> = {};
+    for (const item of MCP_PROPOSAL_OPS_JSON_SCHEMA.items.anyOf) {
+      const opConst = (item.properties.op as { const: string }).const;
+      byOp[opConst] = item as JsonSchemaObject;
+    }
+    return byOp;
+  }
+
+  it('represents exactly the six op kinds from OP_KEYS', () => {
+    const byOp = schemaByOpConst();
+    expect(Object.keys(byOp).sort()).toEqual(Object.keys(OP_KEYS).sort());
+  });
+
+  it('every op schema\'s property keys match OP_KEYS exactly (no drift)', () => {
+    const byOp = schemaByOpConst();
+    for (const [op, keys] of Object.entries(OP_KEYS)) {
+      const schema = byOp[op];
+      expect(schema, `missing MCP schema for ${op}`).toBeDefined();
+      expect(Object.keys(schema!.properties).sort()).toEqual([...keys].sort());
+    }
+  });
+
+  it('optional fields (body, note) are absent from `required`, not null-unioned', () => {
+    const byOp = schemaByOpConst();
+
+    const createKnowledge = byOp.createKnowledge!;
+    expect(createKnowledge.required).toEqual(['op', 'type', 'statement']);
+    expect(createKnowledge.properties.body).toEqual({ type: 'string' });
+
+    const addEvidence = byOp.addEvidence!;
+    expect(addEvidence.required).toEqual(['op', 'knowledge', 'sourceType', 'sourceId', 'stance']);
+    expect(addEvidence.properties.note).toEqual({ type: 'string' });
+    // Full enum, not narrowed to a const 'entry' the way distill's schema is.
+    expect(addEvidence.properties.sourceType).toEqual({ enum: ['entry', 'outcome'] });
+
+    const createRelationship = byOp.createRelationship!;
+    expect(createRelationship.required).toEqual(['op', 'from', 'to', 'kind']);
+    expect(createRelationship.properties.note).toEqual({ type: 'string' });
+
+    const updateKnowledge = byOp.updateKnowledge!;
+    const patch = updateKnowledge.properties.patch as { required?: readonly string[] };
+    expect(patch.required).toBeUndefined();
+  });
+
+  it('never uses a { type: "null" } union anywhere (MCP clients are not structured-outputs constrained)', () => {
+    const seen: unknown[] = [];
+    const stack: unknown[] = [MCP_PROPOSAL_OPS_JSON_SCHEMA];
+    while (stack.length > 0) {
+      const node = stack.pop();
+      if (node === null || typeof node !== 'object') continue;
+      if (seen.includes(node)) continue;
+      seen.push(node);
+      if (Array.isArray(node)) {
+        stack.push(...node);
+        continue;
+      }
+      const record = node as Record<string, unknown>;
+      if (record.type === 'null') throw new Error('found a { type: "null" } union in MCP_PROPOSAL_OPS_JSON_SCHEMA');
+      stack.push(...Object.values(record));
+    }
+  });
+
+  it('includes archiveKnowledge, createRelationship, and createExperiment (out of scope for distill, in scope for MCP)', () => {
+    const byOp = schemaByOpConst();
+    expect(byOp.archiveKnowledge).toBeDefined();
+    expect(byOp.createRelationship).toBeDefined();
+    expect(byOp.createExperiment).toBeDefined();
   });
 });

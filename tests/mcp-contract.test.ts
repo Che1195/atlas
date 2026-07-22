@@ -484,6 +484,72 @@ describe('per-tool happy paths', () => {
     expect(stored?.runId).toMatch(/^mcp:/);
   });
 
+  it('atlas_submit_proposal accepts a body-omitted createKnowledge op end-to-end (MCP schema fix)', async () => {
+    const { t, token } = await seedWorld();
+    const { isError, value } = await toolCall(t, token, 'atlas_submit_proposal', {
+      ops: [{ op: 'createKnowledge', type: 'insight', statement: 'No body here, and that is fine.' }],
+      rationale: 'body genuinely omitted, not null',
+      citations: [],
+    });
+    expect(isError).toBe(false);
+    expect(typeof value.proposalId).toBe('string');
+    const stored = await t.run(async (ctx) => ctx.db.get(value.proposalId as Id<'proposals'>));
+    const ops = stored?.ops as { op: string; body?: string }[];
+    expect(ops[0]?.op).toBe('createKnowledge');
+    expect('body' in ops[0]!).toBe(false);
+  });
+
+  it('atlas_submit_proposal accepts createRelationship + createExperiment (full six-kind schema) with zero knowledge-table writes', async () => {
+    const { t, token, knowledgeId } = await seedWorld();
+    const before = await t.run(async (ctx) => ({
+      knowledge: await ctx.db.query('knowledge').collect(),
+      relationships: await ctx.db.query('relationships').collect(),
+      experiments: await ctx.db.query('experiments').collect(),
+    }));
+
+    const { isError, value } = await toolCall(t, token, 'atlas_submit_proposal', {
+      ops: [
+        { op: 'createKnowledge', type: 'insight', statement: 'Bundled create for the relationship/experiment test.' },
+        {
+          op: 'createRelationship',
+          from: { kind: 'new', index: 0 },
+          to: { kind: 'existing', id: knowledgeId },
+          kind: 'relates-to',
+        },
+        {
+          op: 'createExperiment',
+          knowledge: { kind: 'new', index: 0 },
+          hypothesis: 'Narrating out loud helps.',
+          behavior: 'narrate steps',
+          context: 'incidents',
+          successCriteria: 'feel calmer',
+          failureCriteria: 'no change',
+          observationTarget: 'self-report',
+        },
+      ],
+      rationale: 'exercising the full six-kind schema',
+      citations: [],
+    });
+
+    expect(isError).toBe(false);
+    expect(value.opCount).toBe(3);
+    const stored = await t.run(async (ctx) => ctx.db.get(value.proposalId as Id<'proposals'>));
+    expect(stored?.status).toBe('pending');
+    const opsKinds = (stored?.ops as { op: string }[]).map((op) => op.op);
+    expect(opsKinds).toEqual(['createKnowledge', 'createRelationship', 'createExperiment']);
+
+    // No knowledge/relationships/experiments row was actually created/applied —
+    // the ops sit inert inside the pending proposal (write-asymmetry invariant).
+    const after = await t.run(async (ctx) => ({
+      knowledge: await ctx.db.query('knowledge').collect(),
+      relationships: await ctx.db.query('relationships').collect(),
+      experiments: await ctx.db.query('experiments').collect(),
+    }));
+    expect(after.knowledge).toHaveLength(before.knowledge.length);
+    expect(after.relationships).toHaveLength(before.relationships.length);
+    expect(after.experiments).toHaveLength(before.experiments.length);
+  });
+
   it('atlas_submit_proposal rejects invalid ops and writes nothing', async () => {
     const { t, token } = await seedWorld();
     const { isError, value } = await toolCall(t, token, 'atlas_submit_proposal', {

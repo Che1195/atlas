@@ -67,8 +67,10 @@ export type ProposalOp =
 export type OpVerdict = { valid: true } | { valid: false; error: string };
 
 // --- Key allowlists (checked exhaustively below) ---
+// Exported so MCP_PROPOSAL_OPS_JSON_SCHEMA (below) and its test can be checked
+// directly against these allowlists rather than duplicating them by hand.
 
-const OP_KEYS: Record<ProposalOp['op'], readonly string[]> = {
+export const OP_KEYS: Record<ProposalOp['op'], readonly string[]> = {
   createKnowledge: ['op', 'type', 'statement', 'body'],
   updateKnowledge: ['op', 'target', 'patch', 'reason'],
   archiveKnowledge: ['op', 'target', 'reason'],
@@ -362,6 +364,155 @@ export const PROPOSAL_OPS_JSON_SCHEMA = {
   },
   required: ['ops', 'rationale', 'citations'],
 };
+
+// --- MCP proposal-ops JSON Schema (docs/spec/06-mcp-interface.md §3) ---
+//
+// Unlike PROPOSAL_OPS_JSON_SCHEMA above (OpenAI structured-outputs constrained:
+// additionalProperties:false + a FULL required array + null-unions standing in for
+// "optional", because that API has no optional-field concept), MCP clients are
+// ordinary JSON-Schema consumers with no such constraint. This is a DELIBERATE,
+// documented asymmetry from distill's schema (referenced at both call sites —
+// here and in convex/mcp/tools.ts):
+//   - all SIX op kinds are represented (archiveKnowledge, createRelationship,
+//     createExperiment are out of scope for distill's own narrow schema above,
+//     but 06/07 say a connected MCP client (Hermes) may propose any of the six);
+//   - optional fields (body, note, patch.*) are genuinely optional — simply
+//     absent from `required`, no `{ type: 'null' }` union — so a schema-honoring
+//     client omits them rather than sending `null`, which validateOps (above)
+//     rejects (it only accepts `undefined` for optional fields, never `null`);
+//   - addEvidence.sourceType is the full ['entry', 'outcome'] enum (distill's
+//     schema narrows to a const 'entry' since it only ever cites the entry it
+//     ran on — MCP clients aren't so limited).
+// Mirrors OP_KEYS/checkOp's allowlists exactly (tested in tests/proposalOps.test.ts).
+// Embedded verbatim into atlas_preview_proposal / atlas_submit_proposal's
+// inputSchema (single source of truth — no drift between app and MCP).
+
+const MCP_OP_REF_JSON_SCHEMA = {
+  anyOf: [
+    {
+      type: 'object',
+      additionalProperties: false,
+      properties: { kind: { const: 'existing' }, id: { type: 'string' } },
+      required: ['kind', 'id'],
+    },
+    {
+      type: 'object',
+      additionalProperties: false,
+      properties: { kind: { const: 'new' }, index: { type: 'integer' } },
+      required: ['kind', 'index'],
+    },
+  ],
+} as const;
+
+const MCP_CREATE_KNOWLEDGE_OP_JSON_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    op: { const: 'createKnowledge' },
+    type: { enum: KNOWLEDGE_TYPES },
+    statement: { type: 'string' },
+    body: { type: 'string' },
+  },
+  required: ['op', 'type', 'statement'],
+} as const;
+
+const MCP_UPDATE_KNOWLEDGE_OP_JSON_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    op: { const: 'updateKnowledge' },
+    target: MCP_OP_REF_JSON_SCHEMA,
+    patch: {
+      type: 'object',
+      additionalProperties: false,
+      properties: {
+        statement: { type: 'string' },
+        body: { type: 'string' },
+        type: { enum: KNOWLEDGE_TYPES },
+      },
+    },
+    reason: { type: 'string' },
+  },
+  required: ['op', 'target', 'patch', 'reason'],
+} as const;
+
+const MCP_ARCHIVE_KNOWLEDGE_OP_JSON_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    op: { const: 'archiveKnowledge' },
+    target: MCP_OP_REF_JSON_SCHEMA,
+    reason: { type: 'string' },
+  },
+  required: ['op', 'target', 'reason'],
+} as const;
+
+const MCP_ADD_EVIDENCE_OP_JSON_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    op: { const: 'addEvidence' },
+    knowledge: MCP_OP_REF_JSON_SCHEMA,
+    sourceType: { enum: ['entry', 'outcome'] },
+    sourceId: { type: 'string' },
+    stance: { enum: STANCES },
+    note: { type: 'string' },
+  },
+  required: ['op', 'knowledge', 'sourceType', 'sourceId', 'stance'],
+} as const;
+
+const MCP_CREATE_RELATIONSHIP_OP_JSON_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    op: { const: 'createRelationship' },
+    from: MCP_OP_REF_JSON_SCHEMA,
+    to: MCP_OP_REF_JSON_SCHEMA,
+    kind: { enum: RELATIONSHIP_KINDS },
+    note: { type: 'string' },
+  },
+  required: ['op', 'from', 'to', 'kind'],
+} as const;
+
+const MCP_CREATE_EXPERIMENT_OP_JSON_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    op: { const: 'createExperiment' },
+    knowledge: MCP_OP_REF_JSON_SCHEMA,
+    hypothesis: { type: 'string' },
+    behavior: { type: 'string' },
+    context: { type: 'string' },
+    successCriteria: { type: 'string' },
+    failureCriteria: { type: 'string' },
+    observationTarget: { type: 'string' },
+  },
+  required: [
+    'op',
+    'knowledge',
+    'hypothesis',
+    'behavior',
+    'context',
+    'successCriteria',
+    'failureCriteria',
+    'observationTarget',
+  ],
+} as const;
+
+/** Full six-kind `ProposalOp[]` JSON Schema for MCP's propose tools (06 §3). */
+export const MCP_PROPOSAL_OPS_JSON_SCHEMA = {
+  type: 'array',
+  items: {
+    anyOf: [
+      MCP_CREATE_KNOWLEDGE_OP_JSON_SCHEMA,
+      MCP_UPDATE_KNOWLEDGE_OP_JSON_SCHEMA,
+      MCP_ARCHIVE_KNOWLEDGE_OP_JSON_SCHEMA,
+      MCP_ADD_EVIDENCE_OP_JSON_SCHEMA,
+      MCP_CREATE_RELATIONSHIP_OP_JSON_SCHEMA,
+      MCP_CREATE_EXPERIMENT_OP_JSON_SCHEMA,
+    ],
+  },
+} as const;
 
 // --- Convex arg validator (Phase 3a Task 4) ---
 //
