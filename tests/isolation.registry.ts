@@ -529,6 +529,54 @@ export const ISOLATION_CASES: IsolationCase[] = [
       }
     },
   },
+  {
+    fn: 'oauth.grants.listMine',
+    run: async (t, accessor) => {
+      const clientId = 'iso-test-client-listMine';
+      await seedOAuthClient(t, clientId);
+      const api = await apiOf();
+      await t.withIdentity(USER_A).action(api.oauth.grants.approveGrant, {
+        clientId,
+        redirectUri: 'https://example.com/callback',
+        scopes: ['read'],
+        codeChallenge: 'abc123',
+      });
+      const asB = t.withIdentity({ subject: accessor.subject, name: 'User B' });
+      await asB.mutation(api.account.ensureUser, { timezone: 'UTC' });
+      const listB = await asB.query(api.oauth.grants.listMine, {});
+      if (listB.length !== 0) throw new Error('oauth.grants.listMine leaked another user’s grants');
+    },
+  },
+  {
+    fn: 'oauth.grants.revokeMine',
+    run: async (t, accessor) => {
+      const clientId = 'iso-test-client-revokeMine';
+      await seedOAuthClient(t, clientId);
+      const api = await apiOf();
+      await t.withIdentity(USER_A).action(api.oauth.grants.approveGrant, {
+        clientId,
+        redirectUri: 'https://example.com/callback',
+        scopes: ['read'],
+        codeChallenge: 'abc123',
+      });
+      const grant = await t.run(async (ctx) =>
+        ctx.db
+          .query('oauthGrants')
+          .filter((q) => q.eq(q.field('clientId'), clientId))
+          .unique(),
+      );
+      const asB = t.withIdentity({ subject: accessor.subject, name: 'User B' });
+      await asB.mutation(api.account.ensureUser, { timezone: 'UTC' });
+      let leaked = false;
+      try {
+        await asB.mutation(api.oauth.grants.revokeMine, { id: grant!._id as never });
+        leaked = true;
+      } catch {
+        // expected
+      }
+      if (leaked) throw new Error('oauth.grants.revokeMine revoked another user’s grant');
+    },
+  },
 ];
 
 async function apiOf() {

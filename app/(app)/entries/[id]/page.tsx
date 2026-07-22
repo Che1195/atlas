@@ -101,8 +101,7 @@ export default function EntryDetailPage() {
         return (
           <p data-testid="entry-distill-unavailable" className="text-meta text-ink-muted">
             Distillation happens through your connected assistant — see{' '}
-            {/* Task 6: retarget */}
-            <Link href="/more" className="text-meridian underline">
+            <Link href="/connections" className="text-meridian underline">
               Settings → Connections
             </Link>
             .

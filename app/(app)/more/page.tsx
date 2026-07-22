@@ -2,6 +2,7 @@
 
 import { useClerk } from '@clerk/nextjs';
 import { useQuery } from 'convex/react';
+import Link from 'next/link';
 import { api } from '@/convex/_generated/api';
 
 export default function MorePage() {
@@ -43,6 +44,12 @@ export default function MorePage() {
       </div>
 
       <ul className="mt-6 space-y-2">
+        <li className="flex items-baseline justify-between border-b border-ink-faint pb-2">
+          <Link href="/connections" data-testid="more-connections" className="text-body text-meridian underline">
+            Connections
+          </Link>
+          <span className="text-meta text-ink-faint">API keys, OAuth, setup</span>
+        </li>
         {upcoming.map((item) => (
           <li key={item} className="flex items-baseline justify-between border-b border-ink-faint pb-2">
             <span className="text-body text-ink-muted">{item}</span>

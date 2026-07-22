@@ -4,8 +4,8 @@
 // the authorization code once the user approves).
 import { ConvexError, v } from 'convex/values';
 import { internal } from '../_generated/api';
-import { action, query } from '../_generated/server';
-import { requireUser } from '../lib/auth';
+import { action, mutation, query } from '../_generated/server';
+import { assertOwner, requireUser } from '../lib/auth';
 import { randomHex } from '../lib/randomHex';
 import { sha256Hex } from '../mcp/auth';
 import { CODE_TTL_MS } from './token';
@@ -97,5 +97,52 @@ export const approveGrant = action({
     });
 
     return { code };
+  },
+});
+
+/**
+ * List the caller's OAuth grants for the Connections screen (Phase M Task 6,
+ * docs/spec/06-mcp-interface.md §4). Includes rows still mid-flow (consent
+ * approved, code not yet exchanged) as well as established grants — same
+ * "show everything the user owns" stance as apiKeys.list. Never returns
+ * codeHash/accessTokenHash/refreshTokenHash.
+ */
+export const listMine = query({
+  args: {},
+  handler: async (ctx) => {
+    const user = await requireUser(ctx);
+    const rows = await ctx.db
+      .query('oauthGrants')
+      .withIndex('by_user', (q) => q.eq('userId', user._id))
+      .collect();
+    const sorted = rows.sort((a, b) => b._creationTime - a._creationTime);
+    return await Promise.all(
+      sorted.map(async (row) => {
+        const client = await ctx.db
+          .query('oauthClients')
+          .withIndex('by_clientId', (q) => q.eq('clientId', row.clientId))
+          .unique();
+        return {
+          _id: row._id,
+          clientName: client?.name ?? row.clientId,
+          scopes: row.scopes,
+          grantedAt: row._creationTime,
+          revoked: row.revokedAt !== undefined,
+        };
+      }),
+    );
+  },
+});
+
+/** Revoke one of the caller's own OAuth grants — assertOwner-equivalent (grant.userId check). */
+export const revokeMine = mutation({
+  args: { id: v.id('oauthGrants') },
+  handler: async (ctx, args) => {
+    const user = await requireUser(ctx);
+    const grant = assertOwner(await ctx.db.get(args.id), user);
+    if (grant.revokedAt === undefined) {
+      await ctx.db.patch(grant._id, { revokedAt: Date.now() });
+    }
+    return null;
   },
 });
