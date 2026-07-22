@@ -30,7 +30,7 @@ Built after ~3 features, per the playbook's regret. Vitest + convex-test wiring;
 
 ## Phase 3 — The AI loop (wk 3–4) · *the product becomes Atlas*
 
-- `ai/embed` + Voyage + vector indexes; hybrid search (list results only).
+- `ai/embed` + text-embedding-3 + vector indexes; hybrid search (list results only).
 - `ai/distill` → proposals; **review queue** with op-level approve/edit/reject; `applyProposal` with revisions + provenance.
 - `ai/connect` v1: evidence cross-links + `contradicts` surfacing (pattern-proposal heuristic can lag).
 - `aiRuns` logging + daily budget + honest budget copy.

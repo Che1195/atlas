@@ -214,7 +214,7 @@ export default defineSchema({
 
 ## Notes and rules
 
-- **Vector dimensions 1024** assumes `voyage-3.5` at default dims; if the embedding model changes, bump `embeddingVersion` and run the backfill cron — never mix versions in one index (filter by `embeddingVersion` if a migration window is unavoidable).
+- **Vector dimensions 1024** assumes `text-embedding-3-small` at `dimensions: 1024`; if the embedding model changes, bump `embeddingVersion` and run the backfill cron — never mix versions in one index (filter by `embeddingVersion` if a migration window is unavoidable).
 - **`v.any()` appears exactly twice** (`revisions.snapshot`, `proposals.ops`) and both are validated by the shared runtime checker in `convex/shared/proposalOps.ts` before any write. No third `v.any()` without an ADR.
 - **Polymorphic `sourceId`/`targetId` as strings:** Convex ids are table-typed; the discriminator field (`sourceType`/`targetType`) governs interpretation. Mutations validate existence + ownership of the referenced doc before writing the edge.
 - **Uniqueness** (evidence triple, users.clerkId, apiKeys.keyHash) is enforced by query-then-insert inside mutations — safe because Convex mutations are serializable transactions.

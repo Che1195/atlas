@@ -21,7 +21,7 @@ Status: Approved baseline for implementation. Future sessions implement against 
 | [11-testing-strategy.md](11-testing-strategy.md) | Unit / convex-test / E2E / MCP contract / AI eval layers |
 | [12-roadmap.md](12-roadmap.md) | Phased build order with gates (playbook-adapted) |
 | [13-acceptance-criteria.md](13-acceptance-criteria.md) | Given/When/Then per MVP capability |
-| [adr/](adr/) | Architectural decision records 0001–0010 |
+| [adr/](adr/) | Architectural decision records 0001–0011 |
 
 ## Locked stack decisions (user-approved 2026-07-21)
 
