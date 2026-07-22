@@ -24,7 +24,7 @@ The vision lists 8 layers (Mobile App → Application API → Domain Layer → D
 └───────────────┬───────────────────────────┬────────────────────┘
                 │                           │
         ┌───────▼────────┐          ┌───────▼────────┐
-        │  Claude API    │          │  Voyage API    │
+        │  OpenAI API    │          │  OpenAI API    │
         │  (generation)  │          │  (embeddings)  │
         └────────────────┘          └────────────────┘
 ```
@@ -38,7 +38,7 @@ Vision-layer → implementation mapping:
 | Domain Layer | `convex/lib/` pure modules + mutation bodies |
 | Database | Convex tables |
 | Knowledge Engine | `convex/lib/` (confidence, dedup, graph ops) + `applyProposal` mutation |
-| AI Layer | Convex internal actions calling Claude/Voyage |
+| AI Layer | Convex internal actions calling OpenAI |
 | MCP Server | Convex `httpAction` at `/mcp` (same deployment, same functions) |
 | Hermes Agent | External MCP client (MVP); in-app agent later (07-hermes) |
 
@@ -57,8 +57,8 @@ Vision-layer → implementation mapping:
 - **Crons**: hourly review-generation tick (fires per-user by local-time cadence), daily AI-budget reset, embedding backfill.
 
 ### AI providers
-- Claude API: distillation, connection/contradiction, review generation, Ask synthesis. Called only from Convex actions; keys live in Convex env vars, never in the client. Model/prompt versions recorded on every run (05-ai-pipeline).
-- Voyage API: embeddings for entries + knowledge statements; stored in Convex vector indexes.
+- OpenAI API: distillation, connection/contradiction, review generation, Ask synthesis. Called only from Convex actions; keys live in Convex env vars, never in the client. Model/prompt versions recorded on every run (05-ai-pipeline).
+- OpenAI API: embeddings for entries + knowledge statements; stored in Convex vector indexes.
 
 ## 3. Environments
 
@@ -66,12 +66,12 @@ Convex's built-in split satisfies the playbook's two-database rule:
 - `dev` deployment: local development (`npx convex dev`), E2E target, AI calls allowed but budget-capped low.
 - `prod` deployment: `npx convex deploy` from the pipeline only.
 - Vercel: preview deployments point at dev Convex; production points at prod. Clerk: separate dev/prod instances.
-- Env vars per deployment: `ANTHROPIC_API_KEY`, `VOYAGE_API_KEY`, `CLERK_JWT_ISSUER_DOMAIN`, budget knobs.
+- Env vars per deployment: `OPENAI_API_KEY`, `CLERK_JWT_ISSUER_DOMAIN`, budget knobs.
 
 ## 4. Data flow — the core loop
 
 1. **Capture:** user (PWA) or Hermes (MCP `atlas_create_entry`) writes an entry → mutation stores it, schedules `ai/embed`.
-2. **Distill:** user taps Distill (or auto mode) → `ai/distill` action: loads entry + retrieved related knowledge → Claude structured output → **proposal** row (ops + rationale + citations). Nothing else is written.
+2. **Distill:** user taps Distill (or auto mode) → `ai/distill` action: loads entry + retrieved related knowledge → OpenAI structured output → **proposal** row (ops + rationale + citations). Nothing else is written.
 3. **Review:** review queue renders proposal ops as cards → user approves/edits/rejects per op → `applyProposal` mutation applies approved ops **in one transaction**: creates/updates knowledge, evidence, relationships; writes a revision per touched object; marks proposal resolved.
 4. **Connect:** post-apply, `ai/connect` retrieves semantically near knowledge → may emit a follow-up proposal (relationships, contradiction flags, pattern suggestions).
 5. **Test:** user spawns an experiment from an object; recording its outcome auto-drafts an evidence proposal against the tested object.
@@ -80,7 +80,7 @@ Convex's built-in split satisfies the playbook's two-database rule:
 ## 5. Key architectural rules
 
 - **Single writer:** `applyProposal` is the only code path that materializes AI-originated ops. User-originated direct edits (their own manual knowledge edits) share the same op-application lib so revision/provenance behavior is identical.
-- **Actions vs mutations:** Claude/Voyage calls happen in actions (non-transactional); all writes happen in mutations the action schedules/calls. An action crash can never leave partial knowledge writes.
+- **Actions vs mutations:** OpenAI calls happen in actions (non-transactional); all writes happen in mutations the action schedules/calls. An action crash can never leave partial knowledge writes.
 - **Typed contracts end-to-end:** Convex validators + generated client types; shared TS types for proposal ops in `convex/shared/` imported by both PWA and MCP layer. No `any`.
 - **Idempotency:** pipeline actions take an explicit `runId`; re-runs upsert by `runId` instead of duplicating proposals.
 - **Time:** pure lib functions take time/timezone as parameters. `Date.now()` only at the edges (mutations/actions).

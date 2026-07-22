@@ -35,7 +35,7 @@ export const relationshipKind = v.union(
 
 export const origin = v.union(v.literal('user'), v.literal('ai'));
 
-const EMBEDDING_DIMENSIONS = 1024; // voyage-3.5 — bump embeddingVersion on any change
+const EMBEDDING_DIMENSIONS = 1024; // text-embedding-3-small — bump embeddingVersion on any change
 
 export default defineSchema({
   users: defineTable({

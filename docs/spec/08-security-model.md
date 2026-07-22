@@ -10,7 +10,7 @@ Atlas stores a person's most sensitive self-knowledge. The security posture is: 
 | Leaked MCP API key | Blast radius = that user, those scopes; revocable; hashed at rest; no knowledge-mutation tool exists even with full scopes |
 | Prompt injection via entry content (a pasted conversation containing instructions) | Pipeline reads entries as data; structured-output post-filters (05 §3) bound what any model output can do — worst case is a bad *proposal*, which the human reviews. The proposal gate is the injection firewall. |
 | XSS via markdown bodies | Render through a sanitizing markdown pipeline (no raw HTML pass-through); CSP with no `unsafe-inline` scripts |
-| AI provider data handling | Anthropic API does not train on API data; Voyage per its DPA. Documented in privacy note. No third-party analytics, ever (vision: privacy over engagement). |
+| AI provider data handling | OpenAI API data is not used for training by default, per OpenAI's enterprise/API privacy policy. Documented in privacy note. No third-party analytics, ever (vision: privacy over engagement). |
 | Convex/Clerk/Vercel compromise | Accepted platform risk; encryption at rest is theirs. Mitigation: user-side full export keeps exit always possible. |
 | Device theft (PWA session) | Clerk session lifetime ≤ 30 days; biometric/passcode is the device's job; no offline knowledge cache beyond the capture draft |
 

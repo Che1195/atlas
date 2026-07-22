@@ -4,7 +4,7 @@ AI-native personal knowledge OS: entries (evidence) → AI-proposed knowledge (u
 
 ## Stack (locked — see ADRs before proposing changes)
 
-Next.js (App Router) PWA + Tailwind v4 on Vercel · Convex (db/functions/crons/vector) · Clerk (auth) · Claude API + Voyage embeddings · MCP server as Convex httpAction at `/mcp` · bun.
+Next.js (App Router) PWA + Tailwind v4 on Vercel · Convex (db/functions/crons/vector) · Clerk (auth) · OpenAI API (GPT-5.6 + text-embedding-3) · MCP server as Convex httpAction at `/mcp` · bun.
 
 ## Non-negotiable invariants
 

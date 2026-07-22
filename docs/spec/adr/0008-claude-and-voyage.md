@@ -1,6 +1,6 @@
 # ADR-0008: Claude API for generation, Voyage for embeddings
 
-Status: Accepted
+Status: Superseded by [ADR-0011](0011-openai-provider.md) (2026-07-22)
 
 ## Context
 The pipeline needs structured generation (distill/connect/reviews/ask) and embeddings (retrieval). Anthropic does not offer an embeddings API and recommends Voyage.

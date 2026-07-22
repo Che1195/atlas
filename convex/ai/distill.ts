@@ -8,7 +8,7 @@ import { v } from 'convex/values';
 import { internal } from '../_generated/api';
 import { internalAction } from '../_generated/server';
 import { withinBudget } from '../lib/budget';
-import { DISTILL_EFFORT, DISTILL_MODEL } from './models';
+import { DISTILL_MODEL, DISTILL_REASONING_EFFORT } from './models';
 import { buildDistillPrompt, DISTILL_PROMPT_VERSION } from './prompts/distill';
 import { getProviderKind, stubDistillation } from './provider';
 import {
@@ -90,7 +90,7 @@ export const run = internalAction({
 
       let result: ProviderResult;
 
-      if (getProviderKind(process.env) === 'stub' || !process.env.ANTHROPIC_API_KEY) {
+      if (getProviderKind(process.env) === 'stub' || !process.env.OPENAI_API_KEY) {
         result = stubDistillation(inputs.entry.body);
       } else {
         const { system, user } = buildDistillPrompt({
@@ -100,8 +100,8 @@ export const run = internalAction({
           knowledgeContext: inputs.knowledgeContext,
         });
 
-        const { default: Anthropic } = await import('@anthropic-ai/sdk');
-        const client = new Anthropic();
+        const { default: OpenAI } = await import('openai');
+        const client = new OpenAI();
 
         const attempt = async (
           userContent: string,
@@ -110,41 +110,52 @@ export const run = internalAction({
           verdicts: OpVerdict[];
           input: number;
           output: number;
-          stopReason: string | null;
+          errorReason: 'truncated' | 'refusal' | 'content_filter' | null;
         }> => {
-          const response = await client.messages.create({
+          const response = await client.responses.create({
             model: DISTILL_MODEL,
-            max_tokens: 8192,
-            // Structured extraction has no use for adaptive thinking, and
-            // thinking tokens would otherwise count against max_tokens and
-            // make truncation more likely.
-            thinking: { type: 'disabled' },
-            output_config: {
-              effort: DISTILL_EFFORT,
-              format: { type: 'json_schema', schema: PROPOSAL_OPS_JSON_SCHEMA },
+            max_output_tokens: 8192,
+            reasoning: { effort: DISTILL_REASONING_EFFORT },
+            text: {
+              format: { type: 'json_schema', name: 'distill_ops', schema: PROPOSAL_OPS_JSON_SCHEMA, strict: true },
             },
-            system,
-            messages: [{ role: 'user', content: userContent }],
+            input: [
+              { role: 'system', content: system },
+              { role: 'user', content: userContent },
+            ],
           });
-          const input = response.usage.input_tokens;
-          const output = response.usage.output_tokens;
-          const stopReason = response.stop_reason;
-          // Check stop_reason BEFORE ever locating/parsing a text block: real
-          // truncation of structured output arrives as a PARTIAL text block
-          // with broken JSON, not an absent one — parsing first would throw a
-          // generic SyntaxError that lands in the outer catch with no
-          // same-prompt retry, masking the real (recoverable) cause.
-          if (stopReason === 'max_tokens' || stopReason === 'refusal') {
-            return { normalized: { ops: [], rationale: '', citations: [] }, verdicts: [], input, output, stopReason };
-          }
-          const textBlock = response.content.find(
-            (block): block is Extract<typeof response.content[number], { type: 'text' }> =>
-              block.type === 'text',
+          const input = response.usage?.input_tokens ?? 0;
+          const output = response.usage?.output_tokens ?? 0;
+          // Check status/refusal BEFORE ever parsing output_text: real
+          // truncation of structured output arrives as PARTIAL (broken) JSON
+          // text, not absent text — parsing first would throw a generic
+          // SyntaxError that lands in the outer catch with no same-prompt
+          // retry, masking the real (recoverable) cause.
+          const truncated =
+            response.status === 'incomplete' && response.incomplete_details?.reason === 'max_output_tokens';
+          // A moderation-driven incomplete response is a distinct fatal cause
+          // from truncation — it's not fixed by a same-prompt retry — so it
+          // gets its own error code rather than being folded into 'refusal'.
+          const contentFiltered =
+            response.status === 'incomplete' && response.incomplete_details?.reason === 'content_filter';
+          const refused = response.output.some(
+            (item) => item.type === 'message' && item.content.some((block) => block.type === 'refusal'),
           );
-          if (textBlock === undefined) {
+          const errorReason: 'truncated' | 'refusal' | 'content_filter' | null = truncated
+            ? 'truncated'
+            : contentFiltered
+              ? 'content_filter'
+              : refused
+                ? 'refusal'
+                : null;
+          if (errorReason !== null) {
+            return { normalized: { ops: [], rationale: '', citations: [] }, verdicts: [], input, output, errorReason };
+          }
+          const text = response.output_text;
+          if (!text) {
             throw new Error('distill: no text content in provider response');
           }
-          const parsed = JSON.parse(textBlock.text);
+          const parsed = JSON.parse(text);
           const normalized = stripNulls(parsed) as {
             ops?: unknown[];
             rationale?: string;
@@ -160,15 +171,8 @@ export const run = internalAction({
             verdicts: validateOps(opsField),
             input,
             output,
-            stopReason,
+            errorReason: null,
           };
-        };
-
-        /** Maps a bad stop_reason to the aiRun error code, or null if the attempt landed cleanly. */
-        const badStopReasonError = (stopReason: string | null): 'truncated' | 'refusal' | null => {
-          if (stopReason === 'max_tokens') return 'truncated';
-          if (stopReason === 'refusal') return 'refusal';
-          return null;
         };
 
         const finishWithError = async (error: string) => {
@@ -186,18 +190,16 @@ export const run = internalAction({
         outputTokens += attemptResult.output;
         let callsUsed = 1;
 
-        let stopReasonError = badStopReasonError(attemptResult.stopReason);
-        // Only max_tokens gets a same-prompt retry (attempt 1 only — total calls
-        // stay <= 2); a refusal is a final failure with no retry.
-        if (stopReasonError === 'truncated' && callsUsed < 2) {
+        // Only truncation gets a same-prompt retry (attempt 1 only — total
+        // calls stay <= 2); a refusal is a final failure with no retry.
+        if (attemptResult.errorReason === 'truncated' && callsUsed < 2) {
           attemptResult = await attempt(user);
           inputTokens += attemptResult.input;
           outputTokens += attemptResult.output;
           callsUsed = 2;
-          stopReasonError = badStopReasonError(attemptResult.stopReason);
         }
-        if (stopReasonError !== null) {
-          await finishWithError(stopReasonError);
+        if (attemptResult.errorReason !== null) {
+          await finishWithError(attemptResult.errorReason);
           return null;
         }
 
@@ -212,9 +214,8 @@ export const run = internalAction({
           inputTokens += attemptResult.input;
           outputTokens += attemptResult.output;
           callsUsed = 2;
-          stopReasonError = badStopReasonError(attemptResult.stopReason);
-          if (stopReasonError !== null) {
-            await finishWithError(stopReasonError);
+          if (attemptResult.errorReason !== null) {
+            await finishWithError(attemptResult.errorReason);
             return null;
           }
           invalid = attemptResult.verdicts.find((verdict) => !verdict.valid);

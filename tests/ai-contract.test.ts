@@ -5,7 +5,7 @@ import { PROPOSAL_OPS_JSON_SCHEMA, validateOps } from '../convex/shared/proposal
 
 describe('ai contract', () => {
   it('model id is the spec-mandated distillation model', () => {
-    expect(DISTILL_MODEL).toBe('claude-sonnet-5');
+    expect(DISTILL_MODEL).toBe('gpt-5.6-terra');
   });
   it('prompt embeds the conservatism contract and the context', () => {
     const p = buildDistillPrompt({

@@ -248,8 +248,8 @@ export function allOpsValid(ops: unknown): ops is ProposalOp[] {
 
 // --- Structured-output JSON schema (docs/spec/05-ai-pipeline.md §3) ---
 //
-// Mirrors the ProposalOp contract above for Claude's forced tool-use / structured
-// output. Distill deliberately proposes only createKnowledge / addEvidence /
+// Mirrors the ProposalOp contract above for OpenAI's structured-outputs (Responses
+// API json_schema) contract. Distill deliberately proposes only createKnowledge / addEvidence /
 // updateKnowledge (archiveKnowledge, createRelationship, createExperiment are
 // out of scope for distill and excluded here on purpose) — validateOps above still
 // accepts all six kinds for other pipeline stages (e.g. connect). Structured-outputs

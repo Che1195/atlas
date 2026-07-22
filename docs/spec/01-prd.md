@@ -66,7 +66,7 @@ Anti-metrics (must never be optimized): session count, streaks, time-in-app, ent
 
 ## 6. Constraints
 
-- Single developer + AI agents; cost-conscious Claude API usage with per-user daily budget (05-ai-pipeline §7).
+- Single developer + AI agents; cost-conscious OpenAI API usage with per-user daily budget (05-ai-pipeline §7).
 - Privacy over engagement: no third-party analytics; crash/issue reporting is first-party (own Convex tables).
 - All spend on Convex/Clerk/Vercel free-or-hobby tiers until the four-audit gate; billing + alerts configured before any non-owner user.
 
