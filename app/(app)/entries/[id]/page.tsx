@@ -12,7 +12,8 @@ export default function EntryDetailPage() {
   const params = useParams<{ id: string }>();
   const router = useRouter();
   const entryId = params.id as Id<'entries'>;
-  const entry = useQuery(api.entries.get, { id: entryId });
+  const [removed, setRemoved] = useState(false);
+  const entry = useQuery(api.entries.get, removed ? 'skip' : { id: entryId });
   const updateEntry = useMutation(api.entries.update);
   const removeEntry = useMutation(api.entries.remove);
   const [editing, setEditing] = useState(false);
@@ -38,6 +39,7 @@ export default function EntryDetailPage() {
     if ('archived' in result) {
       setNotice('This entry is cited as evidence, so it was archived instead of deleted.');
     } else {
+      setRemoved(true);
       router.push('/capture');
     }
   }

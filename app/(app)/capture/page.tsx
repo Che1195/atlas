@@ -57,11 +57,12 @@ export default function CapturePage() {
     setSaving(true);
     setError(null);
     try {
+      const parsed = occurredAt === '' ? Date.now() : new Date(occurredAt).getTime();
       await createEntry({
         kind,
         title: title.trim() === '' ? undefined : title.trim(),
         body,
-        occurredAt: occurredAt === '' ? Date.now() : new Date(occurredAt).getTime(),
+        occurredAt: Number.isNaN(parsed) ? Date.now() : parsed,
       });
       setTitle('');
       setBody('');

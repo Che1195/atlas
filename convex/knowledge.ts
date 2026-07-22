@@ -24,8 +24,7 @@ async function writeRevision(
   rev: number,
   reason: string,
 ) {
-  const doc = await ctx.db.get(knowledgeId);
-  if (doc === null) throw new ConvexError({ code: 'not_found', message: 'Not found.' });
+  const doc = assertOwner(await ctx.db.get(knowledgeId), user);
   await ctx.db.insert('revisions', {
     userId: user._id,
     targetType: 'knowledge',
