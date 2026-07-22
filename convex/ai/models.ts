@@ -2,5 +2,5 @@
 // for a task is a one-line change here; aiRuns records make A/B comparison possible.
 
 /** distill, connect, ask — high-volume, structured, cost-sensitive. */
-export const DISTILL_MODEL = 'claude-sonnet-5';
-export const DISTILL_EFFORT = 'medium' as const;
+export const DISTILL_MODEL = 'gpt-5.6-terra';
+export const DISTILL_REASONING_EFFORT = 'medium' as const;

@@ -1,29 +1,29 @@
 /// <reference types="vite/client" />
-// TDD for the live Claude branch of the distill action (final-review fixes,
-// docs/spec/05-ai-pipeline.md §1/§3): max_tokens/refusal robustness (total
-// Claude calls per run stay <= 2) and the addEvidence sourceType post-filter
+// TDD for the live OpenAI branch of the distill action (final-review fixes,
+// docs/spec/05-ai-pipeline.md §1/§3): truncation/refusal robustness (total
+// provider calls per run stay <= 2) and the addEvidence sourceType post-filter
 // (non-'entry' ops — and their positionally-corresponding citation — are
-// dropped, not rewritten). Mocks @anthropic-ai/sdk entirely; never hits the
+// dropped, not rewritten). Mocks the `openai` package entirely; never hits the
 // network.
 //
-// AI_PROVIDER must NOT be 'stub' and ANTHROPIC_API_KEY must be set before any
+// AI_PROVIDER must NOT be 'stub' and OPENAI_API_KEY must be set before any
 // convex module import, so distill.ts takes the live branch.
-process.env.ANTHROPIC_API_KEY = 'test-key';
+process.env.OPENAI_API_KEY = 'test-key';
 delete process.env.AI_PROVIDER;
 
 import { convexTest, type TestConvex } from 'convex-test';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { api, internal } from '../convex/_generated/api';
-import { DISTILL_MODEL } from '../convex/ai/models';
+import { DISTILL_MODEL, DISTILL_REASONING_EFFORT } from '../convex/ai/models';
 import { DISTILL_PROMPT_VERSION } from '../convex/ai/prompts/distill';
 import type { Id } from '../convex/_generated/dataModel';
 import schema from '../convex/schema';
 
 const createMock = vi.fn();
 
-vi.mock('@anthropic-ai/sdk', () => ({
-  default: class MockAnthropic {
-    messages = { create: createMock };
+vi.mock('openai', () => ({
+  default: class MockOpenAI {
+    responses = { create: createMock };
   },
 }));
 
@@ -52,31 +52,39 @@ async function createEntry(asA: AsUser, body: string) {
 }
 
 function textResponse(body: Record<string, unknown>, usage = { input_tokens: 10, output_tokens: 5 }) {
+  const text = JSON.stringify(body);
   return {
-    content: [{ type: 'text', text: JSON.stringify(body) }],
-    stop_reason: 'end_turn',
+    output_text: text,
+    output: [{ type: 'message', role: 'assistant', content: [{ type: 'output_text', text }] }],
+    status: 'completed',
+    incomplete_details: null,
     usage,
   };
 }
 
 function truncatedResponse(usage = { input_tokens: 10, output_tokens: 5 }) {
   // Realistic shape: real truncation of structured output arrives as a
-  // PARTIAL text block with broken/incomplete JSON, not an absent block —
-  // this must be caught by stop_reason before ever reaching JSON.parse.
+  // PARTIAL output_text with broken/incomplete JSON, not absent text — this
+  // must be caught by status/incomplete_details before ever reaching
+  // JSON.parse.
+  const text = '{"ops": [{"op": "createKnowledge", "type": "observation", "statement": "I noticed I get defen';
   return {
-    content: [
-      {
-        type: 'text',
-        text: '{"ops": [{"op": "createKnowledge", "type": "observation", "statement": "I noticed I get defen',
-      },
-    ],
-    stop_reason: 'max_tokens',
+    output_text: text,
+    output: [{ type: 'message', role: 'assistant', content: [{ type: 'output_text', text }] }],
+    status: 'incomplete',
+    incomplete_details: { reason: 'max_output_tokens' },
     usage,
   };
 }
 
 function refusalResponse(usage = { input_tokens: 10, output_tokens: 5 }) {
-  return { content: [], stop_reason: 'refusal', usage };
+  return {
+    output_text: '',
+    output: [{ type: 'message', role: 'assistant', content: [{ type: 'refusal', refusal: 'I cannot help with that.' }] }],
+    status: 'completed',
+    incomplete_details: null,
+    usage,
+  };
 }
 
 const VALID_BODY = {
@@ -99,8 +107,8 @@ async function runRow(t: World, entryId: Id<'entries'>) {
   );
 }
 
-describe('distill.run (live branch: max_tokens/refusal robustness)', () => {
-  it('max_tokens on attempt 1 retries once with the same prompt; a clean attempt 2 succeeds using exactly 2 calls', async () => {
+describe('distill.run (live branch: truncation/refusal robustness)', () => {
+  it('truncation on attempt 1 retries once with the same prompt; a clean attempt 2 succeeds using exactly 2 calls', async () => {
     const { t, asA, userId } = await provisioned();
     const entryId = await createEntry(asA, 'I get defensive in code review.');
     createMock.mockResolvedValueOnce(truncatedResponse()).mockResolvedValueOnce(textResponse(VALID_BODY));
@@ -115,7 +123,7 @@ describe('distill.run (live branch: max_tokens/refusal robustness)', () => {
     expect(proposals).toHaveLength(1);
   });
 
-  it('max_tokens on both attempts finishes as error "truncated" after exactly 2 calls, no proposal', async () => {
+  it('truncation on both attempts finishes as error "truncated" after exactly 2 calls, no proposal', async () => {
     const { t, asA, userId } = await provisioned();
     const entryId = await createEntry(asA, 'I get defensive in code review.');
     createMock.mockResolvedValueOnce(truncatedResponse()).mockResolvedValueOnce(truncatedResponse());
@@ -143,7 +151,7 @@ describe('distill.run (live branch: max_tokens/refusal robustness)', () => {
     expect(await asA.query(api.proposals.list, {})).toEqual([]);
   });
 
-  it('requests max_tokens 8192 and disabled thinking (structured extraction has no use for adaptive thinking)', async () => {
+  it('requests max_output_tokens 8192, medium reasoning effort, and a strict json_schema text format with no Anthropic-era fields', async () => {
     const { t, asA, userId } = await provisioned();
     const entryId = await createEntry(asA, 'I get defensive in code review.');
     createMock.mockResolvedValueOnce(textResponse(VALID_BODY));
@@ -153,8 +161,24 @@ describe('distill.run (live branch: max_tokens/refusal robustness)', () => {
     expect(createMock).toHaveBeenCalledTimes(1);
     const requestArgs = createMock.mock.calls[0]![0];
     expect(requestArgs.model).toBe(DISTILL_MODEL);
-    expect(requestArgs.max_tokens).toBe(8192);
-    expect(requestArgs.thinking).toEqual({ type: 'disabled' });
+    expect(requestArgs.max_output_tokens).toBe(8192);
+    expect(requestArgs.reasoning).toEqual({ effort: DISTILL_REASONING_EFFORT });
+    expect(requestArgs.text.format).toEqual({
+      type: 'json_schema',
+      name: 'distill_ops',
+      schema: expect.any(Object),
+      strict: true,
+    });
+    expect(requestArgs.input).toEqual([
+      { role: 'system', content: expect.any(String) },
+      { role: 'user', content: expect.any(String) },
+    ]);
+    const serialized = JSON.stringify(requestArgs);
+    expect(serialized).not.toMatch(/anthropic/i);
+    expect(requestArgs.thinking).toBeUndefined();
+    expect(requestArgs.output_config).toBeUndefined();
+    expect(requestArgs.system).toBeUndefined();
+    expect(requestArgs.messages).toBeUndefined();
   });
 });
 
