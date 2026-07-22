@@ -9,6 +9,8 @@
  */
 
 import type * as account from "../account.js";
+import type * as ai_models from "../ai/models.js";
+import type * as ai_prompts_distill from "../ai/prompts/distill.js";
 import type * as ai_provider from "../ai/provider.js";
 import type * as entries from "../entries.js";
 import type * as evidence from "../evidence.js";
@@ -28,6 +30,8 @@ import type {
 
 declare const fullApi: ApiFromModules<{
   account: typeof account;
+  "ai/models": typeof ai_models;
+  "ai/prompts/distill": typeof ai_prompts_distill;
   "ai/provider": typeof ai_provider;
   entries: typeof entries;
   evidence: typeof evidence;

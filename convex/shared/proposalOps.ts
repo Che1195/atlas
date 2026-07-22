@@ -243,3 +243,116 @@ export function allOpsValid(ops: unknown): ops is ProposalOp[] {
   const verdicts = validateOps(ops);
   return verdicts.length > 0 && verdicts.every((verdict) => verdict.valid);
 }
+
+// --- Structured-output JSON schema (docs/spec/05-ai-pipeline.md §3) ---
+//
+// Mirrors the ProposalOp contract above for Claude's forced tool-use / structured
+// output. Distill deliberately proposes only createKnowledge / addEvidence /
+// updateKnowledge (archiveKnowledge, createRelationship, createExperiment are
+// out of scope for distill and excluded here on purpose) — validateOps above still
+// accepts all six kinds for other pipeline stages (e.g. connect). Structured-outputs
+// constraints: every object carries `additionalProperties: false` + a full `required`
+// array; no min/max/length/pattern constraints (those stay enforced by validateOps
+// and code-level post-filters); optional fields are modeled as required-but-nullable
+// via `anyOf` with `{ type: 'null' }` since the schema has no notion of "optional".
+
+const OP_REF_JSON_SCHEMA = {
+  anyOf: [
+    {
+      type: 'object',
+      additionalProperties: false,
+      properties: {
+        kind: { const: 'existing' },
+        id: { type: 'string' },
+      },
+      required: ['kind', 'id'],
+    },
+    {
+      type: 'object',
+      additionalProperties: false,
+      properties: {
+        kind: { const: 'new' },
+        index: { type: 'integer' },
+      },
+      required: ['kind', 'index'],
+    },
+  ],
+} as const;
+
+const NULLABLE_STRING_JSON_SCHEMA = { anyOf: [{ type: 'string' }, { type: 'null' }] } as const;
+
+const CREATE_KNOWLEDGE_OP_JSON_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    op: { const: 'createKnowledge' },
+    type: { enum: KNOWLEDGE_TYPES },
+    statement: { type: 'string' },
+    body: NULLABLE_STRING_JSON_SCHEMA,
+  },
+  required: ['op', 'type', 'statement', 'body'],
+} as const;
+
+const ADD_EVIDENCE_OP_JSON_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    op: { const: 'addEvidence' },
+    knowledge: OP_REF_JSON_SCHEMA,
+    sourceType: { enum: ['entry', 'outcome'] },
+    sourceId: { type: 'string' },
+    stance: { enum: STANCES },
+    note: NULLABLE_STRING_JSON_SCHEMA,
+  },
+  required: ['op', 'knowledge', 'sourceType', 'sourceId', 'stance', 'note'],
+} as const;
+
+const UPDATE_KNOWLEDGE_OP_JSON_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    op: { const: 'updateKnowledge' },
+    target: OP_REF_JSON_SCHEMA,
+    patch: {
+      type: 'object',
+      additionalProperties: false,
+      properties: {
+        statement: NULLABLE_STRING_JSON_SCHEMA,
+        body: NULLABLE_STRING_JSON_SCHEMA,
+        type: { anyOf: [{ enum: KNOWLEDGE_TYPES }, { type: 'null' }] },
+      },
+      required: ['statement', 'body', 'type'],
+    },
+    reason: { type: 'string' },
+  },
+  required: ['op', 'target', 'patch', 'reason'],
+} as const;
+
+/** JSON Schema for distill's structured output: `{ ops, rationale, citations }`. */
+export const PROPOSAL_OPS_JSON_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    ops: {
+      type: 'array',
+      items: {
+        anyOf: [
+          CREATE_KNOWLEDGE_OP_JSON_SCHEMA,
+          ADD_EVIDENCE_OP_JSON_SCHEMA,
+          UPDATE_KNOWLEDGE_OP_JSON_SCHEMA,
+        ],
+      },
+    },
+    rationale: { type: 'string' },
+    citations: {
+      type: 'array',
+      items: {
+        type: 'object',
+        additionalProperties: false,
+        properties: { excerpt: { type: 'string' } },
+        required: ['excerpt'],
+      },
+    },
+  },
+  required: ['ops', 'rationale', 'citations'],
+};
