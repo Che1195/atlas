@@ -169,7 +169,7 @@ export default defineSchema({
 
   apiKeys: defineTable({
     userId: v.id('users'),
-    name: v.string(),                  // "Claude Desktop", "Claude Code"
+    name: v.string(),                  // "ChatGPT", "Codex CLI"
     keyHash: v.string(),               // SHA-256 of full key; plaintext shown once at creation
     prefix: v.string(),                // first 8 chars, for display
     scopes: v.array(v.union(v.literal('read'), v.literal('capture'), v.literal('propose'))),

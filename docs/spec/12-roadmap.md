@@ -36,7 +36,7 @@ Built after ~3 features, per the playbook's regret. Vitest + convex-test wiring;
 
 **Gate:** entry → distill → review → approved knowledge with full provenance, on the phone, AI failures degrading gracefully (capture/browse unaffected). Distillation approval-rate measurable.
 
-*Re-slotted by ADR-0012/Phase M: embeddings + hybrid search (originally scoped here as the "3b" remainder) move into Phase M below; `ai/connect` v1 and the issue inbox/crash reporting/ops panel move to Post-MVP (deferred, see below) — the owner-as-tester need they served is covered by the MCP contract suite and manual review in the interim.*
+*Re-slotted by ADR-0012/Phase M: embeddings + hybrid search (originally scoped here as the "3b" remainder) move into Phase M below; `ai/connect` v1 and the issue inbox/crash reporting/ops panel move to Post-MVP (deferred, see below) — the owner-as-tester need they served is covered by the MCP contract suite and manual review in the interim. Dependency inversion accepted knowingly: `ai/distill` as shipped in this phase ran its context assembly (05) without vector-nearest knowledge — that arrives only with Phase M's embeddings — so early distill ran on a degraded context window (recent siblings only) for the ADR-0011/0012 era until Phase M lands.*
 
 ## Phase M — MCP-first intelligence (subscription-first; pulled forward from Phase 5)
 
@@ -62,7 +62,7 @@ Relationships (manual + AI-proposed); experiments + outcomes + outcome-evidence 
 - Daily reflection + weekly review crons producing **computed sections only** (new insights, themes, contradictions, confidence deltas, experiment activity, open questions); review inbox UI. `sections.prose` is written **on-demand** by the user's connected MCP client via `atlas_get_review`, not generated server-side (05, reviews stage; ADR-0012) — `atlas_list_reviews`/`atlas_get_review` MCP tools ship alongside, once reviews exist (06 §3).
 - **iOS PWA hardening as one deliberate pass** — the playbook Phase-4 checklist wholesale: ≥16px inputs sweep, `pan-x pan-y`, `overflow-x-clip` on scrollers, `--app-h` keyboard-viewport pinning, static bottom nav, no autofocus, editors-full-screen audit, icon PNGs (renamed on change), push-only/offline-fallback SW, PWA-container session note in onboarding.
 
-**Gate:** two weeks of the owner using Atlas daily on-phone (capture → review → weekly review) with zero unfiled bugs — "no news means no crashes" verified via the crash panel, not assumed.
+**Gate:** two weeks of the owner using Atlas daily on-phone (capture → review → weekly review) with zero unfiled bugs — "no news means no crashes" verified via the Convex dashboard's logs/errors (manual check), not assumed; the dedicated crash/issue ops panel is Post-MVP (re-slotted above), landing no later than the pre-launch audit trigger.
 
 ## Pre-launch gate — before ANY non-owner account
 
