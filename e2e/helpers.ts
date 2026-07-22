@@ -26,8 +26,25 @@ async function findClerkUser(email: string): Promise<{ id: string } | null> {
     `${CLERK_API}/users?email_address=${encodeURIComponent(email)}`,
     { headers: clerkHeaders() },
   );
-  const users = (await response.json()) as Array<{ id: string }>;
-  return users[0] ?? null;
+  if (!response.ok) {
+    throw new Error(`Clerk user lookup failed: ${response.status} ${await response.text()}`);
+  }
+  const users = (await response.json()) as Array<{
+    id: string;
+    email_addresses: Array<{ email_address: string }>;
+  }>;
+  const user = users[0] ?? null;
+  if (user === null) return null;
+  // Defense in depth: this helper feeds clerkIds into the deletion pipeline, so it
+  // must be structurally unable to return a non-test clerkId, even if called wrong.
+  if (!email.includes('+clerk_test')) {
+    throw new Error(`refusing to resolve non-test email ${email}`);
+  }
+  const emails = user.email_addresses.map((e) => e.email_address);
+  if (!emails.includes(email)) {
+    throw new Error(`Clerk user ${user.id} does not have queried email ${email}`);
+  }
+  return { id: user.id };
 }
 
 /** Find-or-create a Clerk test user; returns clerkId. */
@@ -60,12 +77,7 @@ export async function deleteClerkUserIfExists(email: string): Promise<void> {
 export function precleanConvex(clerkId: string): void {
   execFileSync(
     'bunx',
-    [
-      'convex',
-      'run',
-      'internal/testing:clearTestUser',
-      JSON.stringify({ clerkId, allowEmptyEmail: true }),
-    ],
+    ['convex', 'run', 'internal/testing:clearTestUser', JSON.stringify({ clerkId })],
     { stdio: 'pipe' },
   );
 }

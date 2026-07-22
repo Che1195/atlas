@@ -142,4 +142,18 @@ describe('account provisioning behavior', () => {
     const after = await asEmailless.query(api.account.me, {});
     expect(after?.email).toBe('healed+clerk_test@example.com');
   });
+
+  // Regression: identity.email ?? args.email let an empty-string arg (falsy but
+  // not nullish) blank a healed row. args.email must be treated as absent when ''.
+  it('does not let an empty-string email arg clobber an existing email', async () => {
+    const t = freshWorld();
+    const asUser = t.withIdentity({ subject: 'clerk_user_realemail', name: 'Real Email' });
+    await asUser.mutation(api.account.ensureUser, {
+      timezone: 'UTC',
+      email: 'real+clerk_test@example.com',
+    });
+    await asUser.mutation(api.account.ensureUser, { timezone: 'UTC', email: '' });
+    const me = await asUser.query(api.account.me, {});
+    expect(me?.email).toBe('real+clerk_test@example.com');
+  });
 });

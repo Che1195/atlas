@@ -3,6 +3,7 @@ node_modules/
 .next/
 .vercel/
 .convex/
+next-env.d.ts
 
 # Env
 .env

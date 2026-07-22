@@ -4,7 +4,7 @@
 import { v } from 'convex/values';
 import { internalMutation } from '../_generated/server';
 
-const OWNED_TABLES = [
+export const OWNED_TABLES = [
   'entries',
   'knowledge',
   'evidence',

@@ -25,7 +25,7 @@ export const ensureUser = mutation({
     if (displayName === undefined) {
       throw new ConvexError({ code: 'invalid_input', message: 'Display name is required.' });
     }
-    const email = identity.email ?? args.email;
+    const email = identity.email ?? (args.email || undefined);
 
     const existing = await ctx.db
       .query('users')

@@ -4,6 +4,7 @@
 import { convexTest } from 'convex-test';
 import { describe, expect, it } from 'vitest';
 import { api, internal } from '../convex/_generated/api';
+import { OWNED_TABLES } from '../convex/internal/testing';
 import schema from '../convex/schema';
 
 const modules = import.meta.glob(['../convex/**/*.ts', '../convex/**/*.js', '!../convex/**/*.d.ts']);
@@ -101,5 +102,20 @@ describe('internal/testing.clearTestUser', () => {
     });
     expect(result.deleted).toBe(false);
     expect(await asReal.query(api.account.me, {})).not.toBeNull();
+  });
+
+  // Guards against silent drift: a table added to schema but forgotten in
+  // OWNED_TABLES would leak that table's rows for deleted test users.
+  it('OWNED_TABLES stays in sync with the schema (except users/crashes)', () => {
+    const schemaTables = Object.keys(schema.tables).filter(
+      (table) => table !== 'users' && table !== 'crashes',
+    );
+    const owned = new Set<string>(OWNED_TABLES);
+    const missingFromOwned = schemaTables.filter((table) => !owned.has(table));
+    expect(missingFromOwned, `Tables missing from OWNED_TABLES: ${missingFromOwned.join(', ')}`).toEqual(
+      [],
+    );
+    const staleInOwned = [...owned].filter((table) => !schemaTables.includes(table));
+    expect(staleInOwned, `Stale entries in OWNED_TABLES: ${staleInOwned.join(', ')}`).toEqual([]);
   });
 });
