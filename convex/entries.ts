@@ -159,7 +159,9 @@ export const distillStatus = query({
     const newest = matches.reduce((a, b) => (b._creationTime > a._creationTime ? b : a));
     if (newest.status === 'running') return 'running' as const;
     if (newest.status === 'error') {
-      return newest.error === 'budget' ? ('budget' as const) : ('error' as const);
+      if (newest.error === 'budget') return 'budget' as const;
+      if (newest.error === 'no_provider') return 'unavailable' as const;
+      return 'error' as const;
     }
     if (newest.proposalId === undefined) return 'empty' as const;
     // A proposal only keeps the entry "distilled" while it's still pending —

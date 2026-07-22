@@ -248,6 +248,21 @@ describe('entries.distillStatus mapping', () => {
     expect(await asA.query(api.entries.distillStatus, { id: entryId })).toBe('error');
   });
 
+  it("returns 'unavailable' when the error is 'no_provider' (Phase M Task 2: honest unavailable state)", async () => {
+    const { t, asA, userId } = await provisioned();
+    const entryId = await createEntry(asA, 'no key configured');
+    const runId = `distill:${entryId}:${DISTILL_PROMPT_VERSION}`;
+    const id = await t.mutation(internal.internal.aiRuns.start, {
+      userId,
+      purpose: 'distill',
+      runId,
+      model: DISTILL_MODEL,
+      promptVersion: DISTILL_PROMPT_VERSION,
+    });
+    await t.mutation(internal.internal.aiRuns.finish, { id, status: 'error', error: 'no_provider' });
+    expect(await asA.query(api.entries.distillStatus, { id: entryId })).toBe('unavailable');
+  });
+
   it("returns 'none' (not 'proposed') once the proposal is approved — re-distill is available again", async () => {
     const { t, asA, userId } = await provisioned();
     const entryId = await createEntry(asA, 'I noticed I get defensive in code review.');
