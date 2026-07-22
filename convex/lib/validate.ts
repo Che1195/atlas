@@ -3,6 +3,8 @@
 
 import { ConvexError } from 'convex/values';
 
+import { STATEMENT_MAX_LENGTH } from '../shared/proposalOps';
+
 export function requireValidTimezone(timezone: string): string {
   try {
     // Throws RangeError on invalid IANA names.
@@ -17,6 +19,17 @@ export function requireNonEmpty(value: string, field: string): string {
   const trimmed = value.trim();
   if (trimmed.length === 0) {
     throw new ConvexError({ code: 'invalid_input', message: `${field} must not be empty.` });
+  }
+  return trimmed;
+}
+
+export function requireStatement(value: string): string {
+  const trimmed = requireNonEmpty(value, 'statement');
+  if (trimmed.length > STATEMENT_MAX_LENGTH) {
+    throw new ConvexError({
+      code: 'invalid_input',
+      message: `statement exceeds ${STATEMENT_MAX_LENGTH} characters.`,
+    });
   }
   return trimmed;
 }

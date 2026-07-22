@@ -13,3 +13,8 @@ node_modules/
 LEDGER.md
 .DS_Store
 tsconfig.tsbuildinfo
+
+# Local worktrees
+.worktrees/
+.vercel
+.superpowers/
