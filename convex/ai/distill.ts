@@ -105,10 +105,20 @@ export const run = internalAction({
 
         const attempt = async (
           userContent: string,
-        ): Promise<{ normalized: ProviderResult; verdicts: OpVerdict[]; input: number; output: number }> => {
+        ): Promise<{
+          normalized: ProviderResult;
+          verdicts: OpVerdict[];
+          input: number;
+          output: number;
+          stopReason: string | null;
+        }> => {
           const response = await client.messages.create({
             model: DISTILL_MODEL,
-            max_tokens: 2048,
+            max_tokens: 8192,
+            // Structured extraction has no use for adaptive thinking, and
+            // thinking tokens would otherwise count against max_tokens and
+            // make truncation more likely.
+            thinking: { type: 'disabled' },
             output_config: {
               effort: DISTILL_EFFORT,
               format: { type: 'json_schema', schema: PROPOSAL_OPS_JSON_SCHEMA },
@@ -116,11 +126,17 @@ export const run = internalAction({
             system,
             messages: [{ role: 'user', content: userContent }],
           });
+          const input = response.usage.input_tokens;
+          const output = response.usage.output_tokens;
+          const stopReason = response.stop_reason;
           const textBlock = response.content.find(
             (block): block is Extract<typeof response.content[number], { type: 'text' }> =>
               block.type === 'text',
           );
           if (textBlock === undefined) {
+            if (stopReason === 'max_tokens' || stopReason === 'refusal') {
+              return { normalized: { ops: [], rationale: '', citations: [] }, verdicts: [], input, output, stopReason };
+            }
             throw new Error('distill: no text content in provider response');
           }
           const parsed = JSON.parse(textBlock.text);
@@ -137,17 +153,51 @@ export const run = internalAction({
               citations: (normalized.citations ?? []) as { excerpt?: string }[],
             },
             verdicts: validateOps(opsField),
-            input: response.usage.input_tokens,
-            output: response.usage.output_tokens,
+            input,
+            output,
+            stopReason,
           };
+        };
+
+        /** Maps a bad stop_reason to the aiRun error code, or null if the attempt landed cleanly. */
+        const badStopReasonError = (stopReason: string | null): 'truncated' | 'refusal' | null => {
+          if (stopReason === 'max_tokens') return 'truncated';
+          if (stopReason === 'refusal') return 'refusal';
+          return null;
+        };
+
+        const finishWithError = async (error: string) => {
+          await ctx.runMutation(internal.internal.aiRuns.finish, {
+            id: runRowId,
+            status: 'error',
+            inputTokens,
+            outputTokens,
+            error,
+          });
         };
 
         let attemptResult = await attempt(user);
         inputTokens += attemptResult.input;
         outputTokens += attemptResult.output;
+        let callsUsed = 1;
+
+        let stopReasonError = badStopReasonError(attemptResult.stopReason);
+        // Only max_tokens gets a same-prompt retry (attempt 1 only — total calls
+        // stay <= 2); a refusal is a final failure with no retry.
+        if (stopReasonError === 'truncated' && callsUsed < 2) {
+          attemptResult = await attempt(user);
+          inputTokens += attemptResult.input;
+          outputTokens += attemptResult.output;
+          callsUsed = 2;
+          stopReasonError = badStopReasonError(attemptResult.stopReason);
+        }
+        if (stopReasonError !== null) {
+          await finishWithError(stopReasonError);
+          return null;
+        }
 
         let invalid = attemptResult.verdicts.find((verdict) => !verdict.valid);
-        if (invalid) {
+        if (invalid && callsUsed < 2) {
           const errorList = attemptResult.verdicts
             .map((verdict, i) => (verdict.valid ? null : `op[${i}]: ${verdict.error}`))
             .filter((line): line is string => line !== null)
@@ -156,17 +206,17 @@ export const run = internalAction({
           attemptResult = await attempt(retryUser);
           inputTokens += attemptResult.input;
           outputTokens += attemptResult.output;
+          callsUsed = 2;
+          stopReasonError = badStopReasonError(attemptResult.stopReason);
+          if (stopReasonError !== null) {
+            await finishWithError(stopReasonError);
+            return null;
+          }
           invalid = attemptResult.verdicts.find((verdict) => !verdict.valid);
         }
 
         if (invalid) {
-          await ctx.runMutation(internal.internal.aiRuns.finish, {
-            id: runRowId,
-            status: 'error',
-            inputTokens,
-            outputTokens,
-            error: 'invalid_output',
-          });
+          await finishWithError('invalid_output');
           return null;
         }
 
@@ -187,7 +237,14 @@ export const run = internalAction({
 
       const knowledgeContextIds = new Set(inputs.knowledgeContext.map((k) => k.id));
       const filteredOps: unknown[] = [];
-      for (const rawOp of result.ops) {
+      // citations are positional (citations[i] supports ops[i] — see the prompt's
+      // "every op must cite ..." contract), so dropping an op below must drop its
+      // corresponding citation too, or later citations end up misaligned with the
+      // surviving ops (the positional-citations bug).
+      const filteredCitations: (ProviderResult['citations'][number] | undefined)[] = [];
+      for (let i = 0; i < result.ops.length; i++) {
+        const rawOp = result.ops[i];
+        const citation = result.citations[i];
         if (!isRecord(rawOp) || typeof rawOp.op !== 'string' || !ALLOWED_OP_KINDS.has(rawOp.op)) {
           continue;
         }
@@ -199,6 +256,13 @@ export const run = internalAction({
             knowledgeRef.kind === 'existing' &&
             !knowledgeContextIds.has(String(knowledgeRef.id))
           ) {
+            continue;
+          }
+          // Distill only ever proposes evidence sourced from the entry it ran
+          // on — an op claiming any other sourceType (e.g. 'outcome') is
+          // dropped outright rather than having its sourceId silently
+          // rewritten to this entry.
+          if (op.sourceType !== 'entry') {
             continue;
           }
           if (op.sourceId !== args.entryId) {
@@ -216,6 +280,7 @@ export const run = internalAction({
           }
         }
         filteredOps.push(op);
+        filteredCitations.push(citation);
       }
 
       if (filteredOps.length === 0) {
@@ -228,10 +293,10 @@ export const run = internalAction({
         return null;
       }
 
-      const citations = result.citations.map((c) => ({
+      const citations = filteredCitations.map((c) => ({
         sourceType: 'entry' as const,
         sourceId: args.entryId as unknown as string,
-        excerpt: c.excerpt,
+        excerpt: c?.excerpt,
       }));
 
       const proposalId = await ctx.runMutation(internal.internal.proposalStore.upsertProposal, {

@@ -183,7 +183,7 @@ describe('aiRuns.start / finish', () => {
 });
 
 describe('aiRuns.spentToday', () => {
-  it('sums input+output tokens of non-error runs, excludes error runs, scopes to the window and the user', async () => {
+  it('sums input+output tokens of ok AND error runs (a failed live call still billed those tokens and must count against budget), scopes to the window and the user', async () => {
     const t = convexTest(schema, modules);
     const userIdA = await provisionedUser(t, USER_A);
     const userIdB = await provisionedUser(t, USER_B);
@@ -215,7 +215,7 @@ describe('aiRuns.spentToday', () => {
       status: 'error',
       inputTokens: 9000,
       outputTokens: 9000,
-      error: 'should not count',
+      error: 'should count — the tokens were still billed',
     });
 
     const otherUserId = await t.mutation(internal.internal.aiRuns.start, {
@@ -233,7 +233,7 @@ describe('aiRuns.spentToday', () => {
     });
 
     const spentA = await t.query(internal.internal.aiRuns.spentToday, { userId: userIdA, nowMs });
-    expect(spentA).toBe(125);
+    expect(spentA).toBe(125 + 18000);
 
     const spentB = await t.query(internal.internal.aiRuns.spentToday, { userId: userIdB, nowMs });
     expect(spentB).toBe(1000);

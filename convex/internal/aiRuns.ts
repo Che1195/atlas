@@ -44,7 +44,13 @@ export const start = internalMutation({
         status: 'running',
         model: args.model,
         promptVersion: args.promptVersion,
+        // Explicit undefined REMOVES the key in Convex's patch — a reused runId
+        // must start clean, not carry forward a stale proposal/token counts from
+        // whatever the previous run at this runId happened to finish with.
         error: undefined,
+        proposalId: undefined,
+        inputTokens: undefined,
+        outputTokens: undefined,
       });
       return existing._id;
     }
@@ -84,10 +90,14 @@ export const finish = internalMutation({
 });
 
 /**
- * Sum of input+output tokens for this user's non-error runs whose _creationTime
- * falls in today's UTC window. Full scan filtered by userId — fine at this
- * scale (single-digit users, low run volume); an index (e.g. by_user +
- * _creationTime) is the obvious upgrade if this ever shows up in profiling.
+ * Sum of input+output tokens for this user's runs whose _creationTime falls in
+ * today's UTC window. Deliberately includes error rows: a failed live call
+ * (e.g. truncated/refused output) still billed those tokens, so it must still
+ * count against the daily budget — only 'running' rows are exempt, and they
+ * naturally contribute 0 since no tokens are recorded until finish(). Full scan
+ * filtered by userId — fine at this scale (single-digit users, low run volume);
+ * an index (e.g. by_user + _creationTime) is the obvious upgrade if this ever
+ * shows up in profiling.
  */
 export const spentToday = internalQuery({
   args: { userId: v.id('users'), nowMs: v.number() },
@@ -100,7 +110,6 @@ export const spentToday = internalQuery({
 
     let total = 0;
     for (const row of rows) {
-      if (row.status === 'error') continue;
       if (row._creationTime < windowStart || row._creationTime >= windowEnd) continue;
       total += (row.inputTokens ?? 0) + (row.outputTokens ?? 0);
     }

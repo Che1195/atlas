@@ -161,6 +161,12 @@ export const distillStatus = query({
     if (newest.status === 'error') {
       return newest.error === 'budget' ? ('budget' as const) : ('error' as const);
     }
-    return newest.proposalId !== undefined ? ('proposed' as const) : ('empty' as const);
+    if (newest.proposalId === undefined) return 'empty' as const;
+    // A proposal only keeps the entry "distilled" while it's still pending —
+    // once it's resolved/superseded/expired (or somehow missing), re-distill
+    // must be available again rather than showing a stale "Distilled ✓".
+    const proposal = await ctx.db.get(newest.proposalId);
+    if (proposal === null || proposal.status !== 'pending') return 'none' as const;
+    return 'proposed' as const;
   },
 });

@@ -168,6 +168,29 @@ describe('distill.run (stub provider)', () => {
     expect(await asA.query(api.entries.distillStatus, { id: entryId })).toBe('budget');
   });
 
+  it('re-running the same entry after an edit that yields no ops clears the prior proposalId — distillStatus is empty, not proposed (start() reuse must clear proposalId)', async () => {
+    const { t, asA, userId } = await provisioned();
+    const entryId = await createEntry(asA, 'I noticed I get defensive in code review.');
+
+    await t.action(internal.ai.distill.run, { userId, entryId });
+    expect(await asA.query(api.entries.distillStatus, { id: entryId })).toBe('proposed');
+
+    await asA.mutation(api.entries.update, { id: entryId, body: 'skip' });
+    await t.action(internal.ai.distill.run, { userId, entryId });
+
+    const runId = `distill:${entryId}:${DISTILL_PROMPT_VERSION}`;
+    const runRow = await t.run(async (ctx) =>
+      ctx.db
+        .query('aiRuns')
+        .withIndex('by_runId', (q) => q.eq('runId', runId))
+        .unique(),
+    );
+    expect(runRow?.status).toBe('ok');
+    expect(runRow?.proposalId).toBeUndefined();
+
+    expect(await asA.query(api.entries.distillStatus, { id: entryId })).toBe('empty');
+  });
+
   it("body exactly 'skip' produces no ops and no proposal; distillStatus is empty", async () => {
     const { t, asA, userId } = await provisioned();
     const entryId = await createEntry(asA, 'skip');
@@ -223,5 +246,41 @@ describe('entries.distillStatus mapping', () => {
     });
     await t.mutation(internal.internal.aiRuns.finish, { id, status: 'error', error: 'invalid_output' });
     expect(await asA.query(api.entries.distillStatus, { id: entryId })).toBe('error');
+  });
+
+  it("returns 'none' (not 'proposed') once the proposal is approved — re-distill is available again", async () => {
+    const { t, asA, userId } = await provisioned();
+    const entryId = await createEntry(asA, 'I noticed I get defensive in code review.');
+
+    await t.action(internal.ai.distill.run, { userId, entryId });
+    expect(await asA.query(api.entries.distillStatus, { id: entryId })).toBe('proposed');
+
+    const proposals = await asA.query(api.proposals.list, {});
+    expect(proposals).toHaveLength(1);
+    await asA.mutation(api.proposals.resolve, {
+      id: proposals[0]!._id,
+      resolutions: ['approved'],
+      editedOps: [null],
+    });
+
+    expect(await asA.query(api.entries.distillStatus, { id: entryId })).toBe('none');
+  });
+
+  it("returns 'none' (not 'proposed') once the proposal is reject-all resolved", async () => {
+    const { t, asA, userId } = await provisioned();
+    const entryId = await createEntry(asA, 'I noticed I get defensive in code review.');
+
+    await t.action(internal.ai.distill.run, { userId, entryId });
+    expect(await asA.query(api.entries.distillStatus, { id: entryId })).toBe('proposed');
+
+    const proposals = await asA.query(api.proposals.list, {});
+    expect(proposals).toHaveLength(1);
+    await asA.mutation(api.proposals.resolve, {
+      id: proposals[0]!._id,
+      resolutions: ['rejected'],
+      editedOps: [null],
+    });
+
+    expect(await asA.query(api.entries.distillStatus, { id: entryId })).toBe('none');
   });
 });

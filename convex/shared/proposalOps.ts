@@ -301,7 +301,11 @@ const ADD_EVIDENCE_OP_JSON_SCHEMA = {
   properties: {
     op: { const: 'addEvidence' },
     knowledge: OP_REF_JSON_SCHEMA,
-    sourceType: { enum: ['entry', 'outcome'] },
+    // Distill only ever cites the entry it was run on — narrowed to a single
+    // const here (schema-only; the runtime validator above still accepts
+    // 'outcome' for Phase 4's outcome-sourced proposals via other pipeline
+    // stages, e.g. connect).
+    sourceType: { const: 'entry' },
     sourceId: { type: 'string' },
     stance: { enum: STANCES },
     note: NULLABLE_STRING_JSON_SCHEMA,
