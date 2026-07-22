@@ -10,8 +10,10 @@
 
 import type * as account from "../account.js";
 import type * as entries from "../entries.js";
+import type * as knowledge from "../knowledge.js";
 import type * as lib_auth from "../lib/auth.js";
 import type * as lib_confidence from "../lib/confidence.js";
+import type * as lib_revisions from "../lib/revisions.js";
 import type * as lib_validate from "../lib/validate.js";
 import type * as shared_proposalOps from "../shared/proposalOps.js";
 
@@ -24,8 +26,10 @@ import type {
 declare const fullApi: ApiFromModules<{
   account: typeof account;
   entries: typeof entries;
+  knowledge: typeof knowledge;
   "lib/auth": typeof lib_auth;
   "lib/confidence": typeof lib_confidence;
+  "lib/revisions": typeof lib_revisions;
   "lib/validate": typeof lib_validate;
   "shared/proposalOps": typeof shared_proposalOps;
 }>;
