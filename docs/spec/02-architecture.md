@@ -24,7 +24,7 @@ The vision lists 8 layers (Mobile App → Application API → Domain Layer → D
 └───────────────┬───────────────────────────┬────────────────────┘
                 │                           │
         ┌───────▼────────┐          ┌───────▼────────┐
-        │  Claude API    │          │  Voyage API    │
+        │  OpenAI API    │          │  OpenAI API    │
         │  (generation)  │          │  (embeddings)  │
         └────────────────┘          └────────────────┘
 ```
@@ -57,8 +57,8 @@ Vision-layer → implementation mapping:
 - **Crons**: hourly review-generation tick (fires per-user by local-time cadence), daily AI-budget reset, embedding backfill.
 
 ### AI providers
-- Claude API: distillation, connection/contradiction, review generation, Ask synthesis. Called only from Convex actions; keys live in Convex env vars, never in the client. Model/prompt versions recorded on every run (05-ai-pipeline).
-- Voyage API: embeddings for entries + knowledge statements; stored in Convex vector indexes.
+- OpenAI API: distillation, connection/contradiction, review generation, Ask synthesis. Called only from Convex actions; keys live in Convex env vars, never in the client. Model/prompt versions recorded on every run (05-ai-pipeline).
+- OpenAI API: embeddings for entries + knowledge statements; stored in Convex vector indexes.
 
 ## 3. Environments
 
@@ -66,7 +66,7 @@ Convex's built-in split satisfies the playbook's two-database rule:
 - `dev` deployment: local development (`npx convex dev`), E2E target, AI calls allowed but budget-capped low.
 - `prod` deployment: `npx convex deploy` from the pipeline only.
 - Vercel: preview deployments point at dev Convex; production points at prod. Clerk: separate dev/prod instances.
-- Env vars per deployment: `ANTHROPIC_API_KEY`, `VOYAGE_API_KEY`, `CLERK_JWT_ISSUER_DOMAIN`, budget knobs.
+- Env vars per deployment: `OPENAI_API_KEY`, `CLERK_JWT_ISSUER_DOMAIN`, budget knobs.
 
 ## 4. Data flow — the core loop
 

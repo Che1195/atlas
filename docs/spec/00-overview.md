@@ -28,7 +28,7 @@ Status: Approved baseline for implementation. Future sessions implement against 
 - **Client:** Mobile-first PWA. Next.js (App Router) + React + TypeScript + Tailwind, deployed on Vercel. ([ADR-0001](adr/0001-mobile-first-pwa.md))
 - **Backend:** Convex — database, domain functions, scheduler, vector search. ([ADR-0002](adr/0002-convex-backend.md))
 - **Auth:** Clerk, integrated with Convex via JWT. ([ADR-0003](adr/0003-clerk-auth.md))
-- **AI:** Claude API for generation; Voyage for embeddings. ([ADR-0008](adr/0008-claude-and-voyage.md))
+- **AI:** OpenAI API for generation and embeddings. ([ADR-0011](adr/0011-openai-provider.md), supersedes [ADR-0008](adr/0008-claude-and-voyage.md))
 - **Hermes:** MCP-first — MVP ships the MCP server; the in-app chat agent is post-MVP. ([ADR-0007](adr/0007-mcp-first-hermes.md))
 
 ## Where this spec deliberately deviates from the vision

@@ -47,10 +47,10 @@ experiments/outcomes ───────────────────�
 
 | Task | Model | Why |
 |---|---|---|
-| distill, connect, ask | `claude-sonnet-5` | High-volume, structured, cost-sensitive |
-| reviews (weekly) | `claude-opus-4-8` | Weekly synthesis quality is user-facing spine; low volume |
-| reviews (daily) | `claude-sonnet-5` | Mostly computed input, light prose |
-| embeddings | `voyage-3.5` | Anthropic-recommended pairing; 1024 dims |
+| distill, connect, ask | `gpt-5.6-terra` | High-volume, structured, cost-sensitive |
+| reviews (weekly) | `gpt-5.6-sol` | Weekly synthesis quality is user-facing spine; low volume |
+| reviews (daily) | `gpt-5.6-terra` | Mostly computed input, light prose |
+| embeddings | `text-embedding-3-small` (`dimensions: 1024`) | 1024 dims matches locked schema; verify current model at Phase 3b |
 
 Centralized in `convex/ai/models.ts`; changing a model = one-line change + `aiRuns` records make A/B comparison possible. Prompt templates live in `convex/ai/prompts/` with a `PROMPT_VERSION` const per template; version bumps on any semantic change.
 
