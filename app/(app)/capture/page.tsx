@@ -21,25 +21,31 @@ export default function CapturePage() {
   const restored = useRef(false);
 
   // Restore draft once; persist on every change (AC-2.2's local-draft half).
-  // The restore itself runs in a microtask (rather than setting state directly
-  // in the effect body) so it doesn't trip react-hooks/set-state-in-effect —
-  // same pattern EnsureUser uses for its post-mount mutation.
+  // The localStorage read must happen synchronously here, before the persist
+  // effect below runs (same commit, same tick) — the persist effect gates on
+  // `restored.current` and will otherwise see the still-empty initial
+  // kind/title/body and delete the very draft we're about to restore. Only the
+  // setState calls are deferred to a microtask, so this doesn't trip
+  // react-hooks/set-state-in-effect (same pattern EnsureUser uses for its
+  // post-mount mutation).
   useEffect(() => {
     if (restored.current) return;
     restored.current = true;
-    Promise.resolve().then(() => {
-      try {
-        const raw = localStorage.getItem(DRAFT_KEY);
-        if (raw !== null) {
-          const draft = JSON.parse(raw) as { kind?: EntryKind; title?: string; body?: string };
-          if (draft.kind) setKind(draft.kind);
-          if (draft.title) setTitle(draft.title);
-          if (draft.body) setBody(draft.body);
-        }
-      } catch {
-        // corrupt draft: start clean
-      }
-    });
+    let draft: { kind?: EntryKind; title?: string; body?: string } | null = null;
+    try {
+      const raw = localStorage.getItem(DRAFT_KEY);
+      if (raw !== null) draft = JSON.parse(raw) as { kind?: EntryKind; title?: string; body?: string };
+    } catch {
+      draft = null; // corrupt draft: start clean
+    }
+    if (draft !== null) {
+      const restoredDraft = draft;
+      Promise.resolve().then(() => {
+        if (restoredDraft.kind) setKind(restoredDraft.kind);
+        if (restoredDraft.title) setTitle(restoredDraft.title);
+        if (restoredDraft.body) setBody(restoredDraft.body);
+      });
+    }
   }, []);
   useEffect(() => {
     if (!restored.current) return;
