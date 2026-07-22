@@ -14,13 +14,16 @@ import type * as ai_prompts_distill from "../ai/prompts/distill.js";
 import type * as ai_provider from "../ai/provider.js";
 import type * as entries from "../entries.js";
 import type * as evidence from "../evidence.js";
+import type * as internal_proposalStore from "../internal/proposalStore.js";
 import type * as internal_testing from "../internal/testing.js";
 import type * as knowledge from "../knowledge.js";
+import type * as lib_applyPlan from "../lib/applyPlan.js";
 import type * as lib_auth from "../lib/auth.js";
 import type * as lib_confidence from "../lib/confidence.js";
 import type * as lib_revisions from "../lib/revisions.js";
 import type * as lib_validate from "../lib/validate.js";
 import type * as ops_knowledgeWrites from "../ops/knowledgeWrites.js";
+import type * as proposals from "../proposals.js";
 import type * as shared_proposalOps from "../shared/proposalOps.js";
 
 import type {
@@ -36,13 +39,16 @@ declare const fullApi: ApiFromModules<{
   "ai/provider": typeof ai_provider;
   entries: typeof entries;
   evidence: typeof evidence;
+  "internal/proposalStore": typeof internal_proposalStore;
   "internal/testing": typeof internal_testing;
   knowledge: typeof knowledge;
+  "lib/applyPlan": typeof lib_applyPlan;
   "lib/auth": typeof lib_auth;
   "lib/confidence": typeof lib_confidence;
   "lib/revisions": typeof lib_revisions;
   "lib/validate": typeof lib_validate;
   "ops/knowledgeWrites": typeof ops_knowledgeWrites;
+  proposals: typeof proposals;
   "shared/proposalOps": typeof shared_proposalOps;
 }>;
 

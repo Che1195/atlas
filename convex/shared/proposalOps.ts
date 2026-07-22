@@ -5,6 +5,8 @@
 // Runtime checking here is allowlist-based: unknown op kinds AND unknown keys are
 // rejected (the playbook's PERSISTED_KEYS discipline — drift fails loudly).
 
+import { v } from 'convex/values';
+
 export const KNOWLEDGE_TYPES = [
   'observation',
   'interpretation',
@@ -356,3 +358,86 @@ export const PROPOSAL_OPS_JSON_SCHEMA = {
   },
   required: ['ops', 'rationale', 'citations'],
 };
+
+// --- Convex arg validator (Phase 3a Task 4) ---
+//
+// Mirrors ProposalOp exactly at the Convex boundary. Required because the
+// invariant lint forbids the any-validator outside schema.ts — convex/proposals.ts
+// and convex/internal/proposalStore.ts accept op payloads as args and need a real
+// shape, not an unchecked any. This validator enforces STRUCTURE only (which keys,
+// which primitive types); validateOps above still enforces the semantic rules
+// (non-empty strings, statement length, ref bounds) and must always run on top of it.
+
+const opRefValidator = v.union(
+  v.object({ kind: v.literal('existing'), id: v.string() }),
+  v.object({ kind: v.literal('new'), index: v.number() }),
+);
+
+const knowledgeTypeValidator = v.union(
+  v.literal('observation'),
+  v.literal('interpretation'),
+  v.literal('insight'),
+  v.literal('pattern'),
+  v.literal('principle'),
+  v.literal('question'),
+);
+
+const stanceValidator = v.union(v.literal('supports'), v.literal('contradicts'), v.literal('neutral'));
+
+const relationshipKindValidator = v.union(
+  v.literal('derives-from'),
+  v.literal('generalizes'),
+  v.literal('contradicts'),
+  v.literal('relates-to'),
+  v.literal('answers'),
+  v.literal('supersedes'),
+);
+
+export const proposalOpValidator = v.union(
+  v.object({
+    op: v.literal('createKnowledge'),
+    type: knowledgeTypeValidator,
+    statement: v.string(),
+    body: v.optional(v.string()),
+  }),
+  v.object({
+    op: v.literal('updateKnowledge'),
+    target: opRefValidator,
+    patch: v.object({
+      statement: v.optional(v.string()),
+      body: v.optional(v.string()),
+      type: v.optional(knowledgeTypeValidator),
+    }),
+    reason: v.string(),
+  }),
+  v.object({
+    op: v.literal('archiveKnowledge'),
+    target: opRefValidator,
+    reason: v.string(),
+  }),
+  v.object({
+    op: v.literal('addEvidence'),
+    knowledge: opRefValidator,
+    sourceType: v.union(v.literal('entry'), v.literal('outcome')),
+    sourceId: v.string(),
+    stance: stanceValidator,
+    note: v.optional(v.string()),
+  }),
+  v.object({
+    op: v.literal('createRelationship'),
+    from: opRefValidator,
+    to: opRefValidator,
+    kind: relationshipKindValidator,
+    note: v.optional(v.string()),
+  }),
+  v.object({
+    op: v.literal('createExperiment'),
+    knowledge: opRefValidator,
+    hypothesis: v.string(),
+    behavior: v.string(),
+    context: v.string(),
+    successCriteria: v.string(),
+    failureCriteria: v.string(),
+    observationTarget: v.string(),
+  }),
+);

@@ -30,6 +30,29 @@ async function seedKnowledgeForA(t: T): Promise<string> {
     .mutation(api.knowledge.create, { type: 'insight', statement: 'A private insight' });
 }
 
+/** Seed a pending proposal owned by user A (against a fresh entry); returns both ids. */
+async function seedProposalForA(t: T): Promise<{ proposalId: string; entryId: string }> {
+  const { internal } = await import('../convex/_generated/api');
+  const entryId = await seedEntryForA(t);
+  const userA = await t.run(async (ctx) => {
+    return await ctx.db
+      .query('users')
+      .withIndex('by_clerkId', (q) => q.eq('clerkId', USER_A.subject))
+      .unique();
+  });
+  const proposalId = await t.mutation(internal.internal.proposalStore.upsertProposal, {
+    userId: userA!._id as never,
+    source: 'distillation',
+    entryId: entryId as never,
+    ops: [{ op: 'createKnowledge', type: 'insight', statement: 'A private proposed insight' }],
+    rationale: 'because reasons',
+    citations: [],
+    model: 'stub',
+    promptVersion: 'v1',
+  });
+  return { proposalId, entryId };
+}
+
 export type IsolationCase = {
   /** "module.function" — must match an api export */
   fn: string;
@@ -293,6 +316,66 @@ export const ISOLATION_CASES: IsolationCase[] = [
         // expected
       }
       if (leaked) throw new Error('evidence.remove deleted another user’s evidence row');
+    },
+  },
+  {
+    fn: 'proposals.list',
+    run: async (t, accessor) => {
+      await seedProposalForA(t);
+      const asB = t.withIdentity({ subject: accessor.subject, name: 'User B' });
+      const api = await apiOf();
+      await asB.mutation(api.account.ensureUser, { timezone: 'UTC' });
+      const listB = await asB.query(api.proposals.list, {});
+      if (listB.length !== 0) throw new Error('proposals.list leaked another user’s proposals');
+    },
+  },
+  {
+    fn: 'proposals.forEntry',
+    run: async (t, accessor) => {
+      const { entryId } = await seedProposalForA(t);
+      const asB = t.withIdentity({ subject: accessor.subject, name: 'User B' });
+      const api = await apiOf();
+      await asB.mutation(api.account.ensureUser, { timezone: 'UTC' });
+      let leaked = false;
+      try {
+        await asB.query(api.proposals.forEntry, { entryId: entryId as never });
+        leaked = true;
+      } catch {
+        // expected: uniform not_found
+      }
+      if (leaked) throw new Error('proposals.forEntry returned another user’s proposal');
+    },
+  },
+  {
+    fn: 'proposals.pendingCount',
+    run: async (t, accessor) => {
+      await seedProposalForA(t);
+      const asB = t.withIdentity({ subject: accessor.subject, name: 'User B' });
+      const api = await apiOf();
+      await asB.mutation(api.account.ensureUser, { timezone: 'UTC' });
+      const countB = await asB.query(api.proposals.pendingCount, {});
+      if (countB !== 0) throw new Error('proposals.pendingCount leaked another user’s pending count');
+    },
+  },
+  {
+    fn: 'proposals.resolve',
+    run: async (t, accessor) => {
+      const { proposalId } = await seedProposalForA(t);
+      const asB = t.withIdentity({ subject: accessor.subject, name: 'User B' });
+      const api = await apiOf();
+      await asB.mutation(api.account.ensureUser, { timezone: 'UTC' });
+      let leaked = false;
+      try {
+        await asB.mutation(api.proposals.resolve, {
+          id: proposalId as never,
+          resolutions: ['approved'],
+          editedOps: [null],
+        });
+        leaked = true;
+      } catch {
+        // expected
+      }
+      if (leaked) throw new Error('proposals.resolve applied another user’s proposal');
     },
   },
 ];
