@@ -17,5 +17,12 @@ describe('ai provider flag', () => {
     expect(verdicts.length).toBeGreaterThan(0);
     expect(verdicts.every((v) => v.valid)).toBe(true);
     expect(result.rationale.length).toBeGreaterThan(0);
+    expect(result.citations).toEqual([{ excerpt: 'I noticed I interrupt people when nervous.' }]);
+  });
+
+  it("body exactly 'skip' produces an empty, valid ops array (trivial-empty path)", () => {
+    const result = stubDistillation('skip');
+    expect(result).toEqual({ ops: [], rationale: 'nothing to propose', citations: [] });
+    expect(validateOps(result.ops)).toEqual([]);
   });
 });

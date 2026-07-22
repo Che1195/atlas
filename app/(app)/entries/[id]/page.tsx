@@ -16,9 +16,89 @@ export default function EntryDetailPage() {
   const entry = useQuery(api.entries.get, removed ? 'skip' : { id: entryId });
   const updateEntry = useMutation(api.entries.update);
   const removeEntry = useMutation(api.entries.remove);
+  const distillStatus = useQuery(api.entries.distillStatus, removed ? 'skip' : { id: entryId });
+  const requestDistill = useMutation(api.entries.requestDistill);
   const [editing, setEditing] = useState(false);
   const [draftBody, setDraftBody] = useState('');
   const [notice, setNotice] = useState<string | null>(null);
+  const [distillUnavailable, setDistillUnavailable] = useState(false);
+
+  async function distill() {
+    setDistillUnavailable(false);
+    try {
+      await requestDistill({ id: entryId });
+    } catch {
+      setDistillUnavailable(true);
+    }
+  }
+
+  function renderDistill() {
+    if (distillUnavailable) {
+      return (
+        <p data-testid="entry-distill" className="text-meta text-ink-faint">
+          Distill is unavailable right now
+        </p>
+      );
+    }
+    if (distillStatus === undefined) return null;
+    switch (distillStatus) {
+      case 'none':
+      case 'error':
+        return (
+          <button
+            type="button"
+            data-testid="entry-distill"
+            onClick={distill}
+            className="rounded-control border border-ink-faint px-3 py-1.5 text-meta text-ink-muted"
+          >
+            Distill
+          </button>
+        );
+      case 'running':
+        return (
+          <button
+            type="button"
+            data-testid="entry-distill"
+            disabled
+            className="rounded-control border border-ink-faint px-3 py-1.5 text-meta text-ink-faint opacity-50"
+          >
+            Distilling…
+          </button>
+        );
+      case 'proposed':
+        return (
+          <Link
+            href="/review"
+            data-testid="entry-distill"
+            className="fade-state text-meta text-meridian underline"
+          >
+            Distilled ✓ — view proposal
+          </Link>
+        );
+      case 'empty':
+        return (
+          <div>
+            <p data-testid="entry-distill-empty" className="text-meta text-ink-muted">
+              Atlas found nothing worth proposing in this entry
+            </p>
+            <button
+              type="button"
+              data-testid="entry-distill"
+              onClick={distill}
+              className="fade-state mt-1 text-meta text-meridian underline"
+            >
+              Distill again
+            </button>
+          </div>
+        );
+      case 'budget':
+        return (
+          <p data-testid="entry-distill" className="text-meta text-pending">
+            AI budget reached for today — Distill will work tomorrow, your entry is saved
+          </p>
+        );
+    }
+  }
 
   if (entry === undefined) {
     return (
@@ -106,6 +186,7 @@ export default function EntryDetailPage() {
           </div>
         </>
       )}
+      <div className="mt-1">{renderDistill()}</div>
       {notice !== null && <p className="text-meta text-pending">{notice}</p>}
 
       {entry.citedBy.length > 0 && (

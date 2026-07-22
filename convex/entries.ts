@@ -1,4 +1,5 @@
 import { v } from 'convex/values';
+import { internal } from './_generated/api';
 import { mutation, query } from './_generated/server';
 import { assertOwner, requireUser } from './lib/auth';
 import { requireNonEmpty } from './lib/validate';
@@ -115,5 +116,57 @@ export const remove = mutation({
     }
     await ctx.db.delete(entry._id);
     return { deleted: true as const };
+  },
+});
+
+/**
+ * Schedule a distill run for this entry (Phase 3a Task 6). Budget refusal happens
+ * inside the action, not here, so the message stays honest even under races —
+ * this always schedules and returns immediately.
+ */
+export const requestDistill = mutation({
+  args: { id: v.id('entries') },
+  handler: async (ctx, args) => {
+    const user = await requireUser(ctx);
+    const entry = assertOwner(await ctx.db.get(args.id), user);
+    await ctx.scheduler.runAfter(0, internal.ai.distill.run, {
+      userId: user._id,
+      entryId: entry._id,
+    });
+    return { scheduled: true as const };
+  },
+});
+
+/**
+ * Drives the entry-detail Distill button's state. Derived from the newest aiRun
+ * whose runId has the `distill:{entryId}:` prefix (by_runId is a GLOBAL exact-match
+ * index, so we scan this user's 'distill' purpose rows and filter by prefix instead).
+ */
+export const distillStatus = query({
+  args: { id: v.id('entries') },
+  handler: async (ctx, args) => {
+    const user = await requireUser(ctx);
+    assertOwner(await ctx.db.get(args.id), user);
+
+    const prefix = `distill:${args.id}:`;
+    const rows = await ctx.db
+      .query('aiRuns')
+      .withIndex('by_user', (q) => q.eq('userId', user._id).eq('purpose', 'distill'))
+      .collect();
+    const matches = rows.filter((row) => row.runId.startsWith(prefix));
+    if (matches.length === 0) return 'none' as const;
+
+    const newest = matches.reduce((a, b) => (b._creationTime > a._creationTime ? b : a));
+    if (newest.status === 'running') return 'running' as const;
+    if (newest.status === 'error') {
+      return newest.error === 'budget' ? ('budget' as const) : ('error' as const);
+    }
+    if (newest.proposalId === undefined) return 'empty' as const;
+    // A proposal only keeps the entry "distilled" while it's still pending —
+    // once it's resolved/superseded/expired (or somehow missing), re-distill
+    // must be available again rather than showing a stale "Distilled ✓".
+    const proposal = await ctx.db.get(newest.proposalId);
+    if (proposal === null || proposal.status !== 'pending') return 'none' as const;
+    return 'proposed' as const;
   },
 });

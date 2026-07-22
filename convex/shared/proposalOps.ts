@@ -5,6 +5,8 @@
 // Runtime checking here is allowlist-based: unknown op kinds AND unknown keys are
 // rejected (the playbook's PERSISTED_KEYS discipline — drift fails loudly).
 
+import { v } from 'convex/values';
+
 export const KNOWLEDGE_TYPES = [
   'observation',
   'interpretation',
@@ -243,3 +245,203 @@ export function allOpsValid(ops: unknown): ops is ProposalOp[] {
   const verdicts = validateOps(ops);
   return verdicts.length > 0 && verdicts.every((verdict) => verdict.valid);
 }
+
+// --- Structured-output JSON schema (docs/spec/05-ai-pipeline.md §3) ---
+//
+// Mirrors the ProposalOp contract above for Claude's forced tool-use / structured
+// output. Distill deliberately proposes only createKnowledge / addEvidence /
+// updateKnowledge (archiveKnowledge, createRelationship, createExperiment are
+// out of scope for distill and excluded here on purpose) — validateOps above still
+// accepts all six kinds for other pipeline stages (e.g. connect). Structured-outputs
+// constraints: every object carries `additionalProperties: false` + a full `required`
+// array; no min/max/length/pattern constraints (those stay enforced by validateOps
+// and code-level post-filters); optional fields are modeled as required-but-nullable
+// via `anyOf` with `{ type: 'null' }` since the schema has no notion of "optional".
+
+const OP_REF_JSON_SCHEMA = {
+  anyOf: [
+    {
+      type: 'object',
+      additionalProperties: false,
+      properties: {
+        kind: { const: 'existing' },
+        id: { type: 'string' },
+      },
+      required: ['kind', 'id'],
+    },
+    {
+      type: 'object',
+      additionalProperties: false,
+      properties: {
+        kind: { const: 'new' },
+        index: { type: 'integer' },
+      },
+      required: ['kind', 'index'],
+    },
+  ],
+} as const;
+
+const NULLABLE_STRING_JSON_SCHEMA = { anyOf: [{ type: 'string' }, { type: 'null' }] } as const;
+
+const CREATE_KNOWLEDGE_OP_JSON_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    op: { const: 'createKnowledge' },
+    type: { enum: KNOWLEDGE_TYPES },
+    statement: { type: 'string' },
+    body: NULLABLE_STRING_JSON_SCHEMA,
+  },
+  required: ['op', 'type', 'statement', 'body'],
+} as const;
+
+const ADD_EVIDENCE_OP_JSON_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    op: { const: 'addEvidence' },
+    knowledge: OP_REF_JSON_SCHEMA,
+    // Distill only ever cites the entry it was run on — narrowed to a single
+    // const here (schema-only; the runtime validator above still accepts
+    // 'outcome' for Phase 4's outcome-sourced proposals via other pipeline
+    // stages, e.g. connect).
+    sourceType: { const: 'entry' },
+    sourceId: { type: 'string' },
+    stance: { enum: STANCES },
+    note: NULLABLE_STRING_JSON_SCHEMA,
+  },
+  required: ['op', 'knowledge', 'sourceType', 'sourceId', 'stance', 'note'],
+} as const;
+
+const UPDATE_KNOWLEDGE_OP_JSON_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    op: { const: 'updateKnowledge' },
+    target: OP_REF_JSON_SCHEMA,
+    patch: {
+      type: 'object',
+      additionalProperties: false,
+      properties: {
+        statement: NULLABLE_STRING_JSON_SCHEMA,
+        body: NULLABLE_STRING_JSON_SCHEMA,
+        type: { anyOf: [{ enum: KNOWLEDGE_TYPES }, { type: 'null' }] },
+      },
+      required: ['statement', 'body', 'type'],
+    },
+    reason: { type: 'string' },
+  },
+  required: ['op', 'target', 'patch', 'reason'],
+} as const;
+
+/** JSON Schema for distill's structured output: `{ ops, rationale, citations }`. */
+export const PROPOSAL_OPS_JSON_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    ops: {
+      type: 'array',
+      items: {
+        anyOf: [
+          CREATE_KNOWLEDGE_OP_JSON_SCHEMA,
+          ADD_EVIDENCE_OP_JSON_SCHEMA,
+          UPDATE_KNOWLEDGE_OP_JSON_SCHEMA,
+        ],
+      },
+    },
+    rationale: { type: 'string' },
+    citations: {
+      type: 'array',
+      items: {
+        type: 'object',
+        additionalProperties: false,
+        properties: { excerpt: { type: 'string' } },
+        required: ['excerpt'],
+      },
+    },
+  },
+  required: ['ops', 'rationale', 'citations'],
+};
+
+// --- Convex arg validator (Phase 3a Task 4) ---
+//
+// Mirrors ProposalOp exactly at the Convex boundary. Required because the
+// invariant lint forbids the any-validator outside schema.ts — convex/proposals.ts
+// and convex/internal/proposalStore.ts accept op payloads as args and need a real
+// shape, not an unchecked any. This validator enforces STRUCTURE only (which keys,
+// which primitive types); validateOps above still enforces the semantic rules
+// (non-empty strings, statement length, ref bounds) and must always run on top of it.
+
+const opRefValidator = v.union(
+  v.object({ kind: v.literal('existing'), id: v.string() }),
+  v.object({ kind: v.literal('new'), index: v.number() }),
+);
+
+const knowledgeTypeValidator = v.union(
+  v.literal('observation'),
+  v.literal('interpretation'),
+  v.literal('insight'),
+  v.literal('pattern'),
+  v.literal('principle'),
+  v.literal('question'),
+);
+
+const stanceValidator = v.union(v.literal('supports'), v.literal('contradicts'), v.literal('neutral'));
+
+const relationshipKindValidator = v.union(
+  v.literal('derives-from'),
+  v.literal('generalizes'),
+  v.literal('contradicts'),
+  v.literal('relates-to'),
+  v.literal('answers'),
+  v.literal('supersedes'),
+);
+
+export const proposalOpValidator = v.union(
+  v.object({
+    op: v.literal('createKnowledge'),
+    type: knowledgeTypeValidator,
+    statement: v.string(),
+    body: v.optional(v.string()),
+  }),
+  v.object({
+    op: v.literal('updateKnowledge'),
+    target: opRefValidator,
+    patch: v.object({
+      statement: v.optional(v.string()),
+      body: v.optional(v.string()),
+      type: v.optional(knowledgeTypeValidator),
+    }),
+    reason: v.string(),
+  }),
+  v.object({
+    op: v.literal('archiveKnowledge'),
+    target: opRefValidator,
+    reason: v.string(),
+  }),
+  v.object({
+    op: v.literal('addEvidence'),
+    knowledge: opRefValidator,
+    sourceType: v.union(v.literal('entry'), v.literal('outcome')),
+    sourceId: v.string(),
+    stance: stanceValidator,
+    note: v.optional(v.string()),
+  }),
+  v.object({
+    op: v.literal('createRelationship'),
+    from: opRefValidator,
+    to: opRefValidator,
+    kind: relationshipKindValidator,
+    note: v.optional(v.string()),
+  }),
+  v.object({
+    op: v.literal('createExperiment'),
+    knowledge: opRefValidator,
+    hypothesis: v.string(),
+    behavior: v.string(),
+    context: v.string(),
+    successCriteria: v.string(),
+    failureCriteria: v.string(),
+    observationTarget: v.string(),
+  }),
+);

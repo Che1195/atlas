@@ -1,11 +1,8 @@
-import { ConvexError, v } from 'convex/values';
-import type { Doc, Id } from './_generated/dataModel';
-import type { MutationCtx } from './_generated/server';
+import { v } from 'convex/values';
 import { mutation, query } from './_generated/server';
 import { assertOwner, requireUser } from './lib/auth';
 import { computeConfidence, type EvidenceSource } from './lib/confidence';
-import { knowledgeSnapshot } from './lib/revisions';
-import { requireNonEmpty, requireStatement } from './lib/validate';
+import { archiveKnowledgeDoc, insertKnowledge, patchKnowledge } from './ops/knowledgeWrites';
 
 const knowledgeType = v.union(
   v.literal('observation'), v.literal('interpretation'), v.literal('insight'),
@@ -16,43 +13,16 @@ const confidence = v.union(
   v.literal('strong'), v.literal('mixed'), v.literal('contradicted'),
 );
 
-/** Write the post-mutation snapshot as revision `rev`. Call after every knowledge patch. */
-async function writeRevision(
-  ctx: MutationCtx,
-  user: Doc<'users'>,
-  knowledgeId: Id<'knowledge'>,
-  rev: number,
-  reason: string,
-) {
-  const doc = assertOwner(await ctx.db.get(knowledgeId), user);
-  await ctx.db.insert('revisions', {
-    userId: user._id,
-    targetType: 'knowledge',
-    targetId: knowledgeId,
-    rev,
-    snapshot: knowledgeSnapshot(doc),
-    actor: 'user',
-    reason,
-  });
-}
-
 export const create = mutation({
   args: { type: knowledgeType, statement: v.string(), body: v.optional(v.string()) },
   handler: async (ctx, args) => {
     const user = await requireUser(ctx);
-    const id = await ctx.db.insert('knowledge', {
-      userId: user._id,
-      type: args.type,
-      statement: requireStatement(args.statement),
-      body: args.body,
-      confidence: 'hypothesis',
-      confidenceOverridden: false,
-      status: 'active',
-      origin: 'user',
-      rev: 1,
-    });
-    await writeRevision(ctx, user, id, 1, 'Created');
-    return id;
+    return await insertKnowledge(
+      ctx,
+      user,
+      { type: args.type, statement: args.statement, body: args.body, origin: 'user' },
+      { actor: 'user' },
+    );
   },
 });
 
@@ -69,18 +39,7 @@ export const revise = mutation({
   handler: async (ctx, args) => {
     const user = await requireUser(ctx);
     const doc = assertOwner(await ctx.db.get(args.id), user);
-    const reason = requireNonEmpty(args.reason, 'reason');
-    const patch: { statement?: string; body?: string; type?: Doc<'knowledge'>['type']; rev: number } = {
-      rev: doc.rev + 1,
-    };
-    if (args.patch.statement !== undefined) patch.statement = requireStatement(args.patch.statement);
-    if (args.patch.body !== undefined) patch.body = args.patch.body;
-    if (args.patch.type !== undefined) patch.type = args.patch.type;
-    if (Object.keys(patch).length === 1) {
-      throw new ConvexError({ code: 'invalid_input', message: 'patch must not be empty.' });
-    }
-    await ctx.db.patch(doc._id, patch);
-    await writeRevision(ctx, user, doc._id, patch.rev, reason);
+    await patchKnowledge(ctx, user, doc, args.patch, args.reason, { actor: 'user' });
     return null;
   },
 });
@@ -90,10 +49,7 @@ export const archive = mutation({
   handler: async (ctx, args) => {
     const user = await requireUser(ctx);
     const doc = assertOwner(await ctx.db.get(args.id), user);
-    const reason = requireNonEmpty(args.reason, 'reason');
-    const rev = doc.rev + 1;
-    await ctx.db.patch(doc._id, { status: 'archived', rev });
-    await writeRevision(ctx, user, doc._id, rev, reason);
+    await archiveKnowledgeDoc(ctx, user, doc, args.reason, { actor: 'user' });
     return null;
   },
 });
