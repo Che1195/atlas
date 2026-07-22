@@ -11,5 +11,7 @@ export function isValidRedirectUri(uri: string): boolean {
   }
   if (parsed.protocol === 'https:') return true;
   const host = parsed.hostname;
-  return host === 'localhost' || host === '127.0.0.1' || host === '::1';
+  // WHATWG URL.hostname keeps the brackets for IPv6 literals (new URL('http://[::1]:8080/cb').hostname
+  // === '[::1]', not '::1') — checking the unbracketed form here was dead code.
+  return host === 'localhost' || host === '127.0.0.1' || host === '[::1]';
 }

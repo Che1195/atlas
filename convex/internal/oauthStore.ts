@@ -75,31 +75,84 @@ export const findGrantByCodeHash = internalQuery({
   },
 });
 
-/** Single-use enforcement: clear the code fields regardless of outcome (called on
- * expiry and PKCE mismatch too, not just success — a failed attempt burns the code
- * rather than allowing a verifier-guessing retry loop). */
-export const consumeCode = internalMutation({
-  args: { grantId: v.id('oauthGrants') },
-  handler: async (ctx, args) => {
-    await ctx.db.patch(args.grantId, {
-      codeHash: undefined,
-      codeExpiresAt: undefined,
-      codeChallenge: undefined,
-    });
-  },
-});
+export type FinalizeAuthorizationCodeReason = 'not_found' | 'client_mismatch' | 'expired' | 'pkce_mismatch';
 
-/** Successful code exchange: consume the code AND issue the first token pair, atomically. */
-export const exchangeCode = internalMutation({
-  args: { grantId: v.id('oauthGrants'), accessTokenHash: v.string(), refreshTokenHash: v.string() },
-  handler: async (ctx, args) => {
-    await ctx.db.patch(args.grantId, {
+export type FinalizeAuthorizationCodeResult =
+  | { ok: true; scopes: ('read' | 'capture' | 'propose')[] }
+  | { ok: false; reason: FinalizeAuthorizationCodeReason };
+
+/**
+ * Atomic validate-then-consume for the authorization_code grant (RFC 6749
+ * §4.1.3, PKCE RFC 7636). MUST stay a single mutation: an earlier version had
+ * convex/oauth/token.ts read the grant (query) and then validate/consume it
+ * via separate mutations (consumeCode/exchangeCode) — two transactions with a
+ * window in between where two concurrent exchanges of the same code could
+ * both pass validation before either had consumed it (a real double-spend:
+ * two token pairs minted from one code). Doing the re-read, every check, and
+ * the consuming patch inside ONE mutation makes Convex's transactional
+ * optimistic-concurrency-control the enforcement: two concurrent calls that
+ * touch the same grant document conflict, one commits and one is retried: the
+ * retry re-runs this handler from the top, and its re-read by `codeHash` (the
+ * very first line) now sees the row the winner already cleared -> 'not_found'.
+ * A concurrent duplicate exchange therefore always gets exactly one winner.
+ *
+ * PKCE verification itself (crypto.subtle.digest) can't run in a mutation, so
+ * the calling action computes `pkceOk` beforehand from the codeChallenge it
+ * read via a separate (non-authoritative) query, and passes just the boolean
+ * result in. That's safe: codeChallenge only ever transitions from
+ * present -> cleared (this same mutation is the only writer, and it clears it
+ * unconditionally), never changes value while present, so a `pkceOk` computed
+ * against a still-present challenge is valid for whatever this mutation reads
+ * moments later — it is never stale in a way that flips true/false.
+ */
+export const finalizeAuthorizationCode = internalMutation({
+  args: {
+    codeHash: v.string(),
+    clientId: v.string(),
+    redirectUri: v.string(),
+    now: v.number(),
+    pkceOk: v.boolean(),
+    accessTokenHash: v.string(),
+    refreshTokenHash: v.string(),
+  },
+  handler: async (ctx, args): Promise<FinalizeAuthorizationCodeResult> => {
+    const grant = await ctx.db
+      .query('oauthGrants')
+      .withIndex('by_codeHash', (q) => q.eq('codeHash', args.codeHash))
+      .unique();
+    if (grant === null || grant.codeExpiresAt === undefined || grant.codeChallenge === undefined) {
+      // Never issued, already consumed by a winning concurrent call, or
+      // otherwise dead — codeHash is cleared the instant a grant is consumed,
+      // so a reused or raced code simply misses this lookup.
+      return { ok: false, reason: 'not_found' };
+    }
+
+    const burn = () =>
+      ctx.db.patch(grant._id, { codeHash: undefined, codeExpiresAt: undefined, codeChallenge: undefined });
+
+    if (grant.clientId !== args.clientId || grant.redirectUri !== args.redirectUri) {
+      // Possible misuse (code presented against a different client/redirect) — burn it.
+      await burn();
+      return { ok: false, reason: 'client_mismatch' };
+    }
+    if (args.now > grant.codeExpiresAt) {
+      await burn();
+      return { ok: false, reason: 'expired' };
+    }
+    if (!args.pkceOk) {
+      // A failed PKCE check burns the code too — no verifier-guessing retry loop.
+      await burn();
+      return { ok: false, reason: 'pkce_mismatch' };
+    }
+
+    await ctx.db.patch(grant._id, {
       codeHash: undefined,
       codeExpiresAt: undefined,
       codeChallenge: undefined,
       accessTokenHash: args.accessTokenHash,
       refreshTokenHash: args.refreshTokenHash,
     });
+    return { ok: true, scopes: grant.scopes };
   },
 });
 

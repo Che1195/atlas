@@ -9,7 +9,7 @@ process.env.AI_PROVIDER = 'stub';
 
 import { convexTest, type TestConvex } from 'convex-test';
 import { describe, expect, it } from 'vitest';
-import { api } from '../convex/_generated/api';
+import { api, internal } from '../convex/_generated/api';
 import { sha256Hex } from '../convex/mcp/auth';
 import schema from '../convex/schema';
 
@@ -310,5 +310,53 @@ describe('full authorization_code dance', () => {
       body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/list' }),
     });
     expect(mcpResponse.status).toBe(401);
+  });
+});
+
+describe('atomic code consumption (internal mutation)', () => {
+  // The httpAction-level "reused code" test above already proves the end-to-end
+  // behavior for two SEQUENTIAL exchanges. This test exercises the internal
+  // mutation directly to simulate the race a naive query-then-separate-mutation
+  // design would lose: two calls presenting the same codeHash, back to back,
+  // with no re-fetch in between (i.e. as if both had already read the grant and
+  // computed pkceOk before either one committed — the worst case for a
+  // non-atomic implementation). finalizeAuthorizationCode must let exactly one
+  // through and report the other as a plain 'not_found' conflict.
+  it('a second finalize call against an already-consumed grant reports not_found, not a second success', async () => {
+    const t = convexTest(schema, modules);
+    const { clientId, redirectUris } = await registerClient(t);
+    const redirectUri = redirectUris[0]!;
+    const verifier = randomVerifier();
+    const challenge = await s256Challenge(verifier);
+    const code = await approve(t, USER_A, { clientId, redirectUri, scopes: ['read'], codeChallenge: challenge });
+    const codeHash = await sha256Hex(code);
+
+    const baseArgs = { codeHash, clientId, redirectUri, now: Date.now(), pkceOk: true };
+
+    const first = await t.mutation(internal.internal.oauthStore.finalizeAuthorizationCode, {
+      ...baseArgs,
+      accessTokenHash: 'race-test-access-hash-1',
+      refreshTokenHash: 'race-test-refresh-hash-1',
+    });
+    expect(first.ok).toBe(true);
+
+    // Same codeHash, as if a concurrent duplicate request had raced the first —
+    // must be rejected, not silently mint a second token pair.
+    const second = await t.mutation(internal.internal.oauthStore.finalizeAuthorizationCode, {
+      ...baseArgs,
+      accessTokenHash: 'race-test-access-hash-2',
+      refreshTokenHash: 'race-test-refresh-hash-2',
+    });
+    expect(second.ok).toBe(false);
+    if (!second.ok) expect(second.reason).toBe('not_found');
+
+    // And the grant's tokens are still the FIRST call's, not overwritten by the second.
+    const grant = await t.run(async (ctx) =>
+      ctx.db
+        .query('oauthGrants')
+        .withIndex('by_accessTokenHash', (q) => q.eq('accessTokenHash', 'race-test-access-hash-1'))
+        .unique(),
+    );
+    expect(grant).not.toBeNull();
   });
 });

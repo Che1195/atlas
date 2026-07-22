@@ -54,37 +54,44 @@ async function handleAuthorizationCode(ctx: ActionCtx, params: URLSearchParams):
   }
 
   const codeHash = await sha256Hex(code);
-  const grant = await ctx.runQuery(internal.internal.oauthStore.findGrantByCodeHash, { codeHash });
-  if (grant === null || grant.codeExpiresAt === undefined || grant.codeChallenge === undefined) {
-    // Covers: never issued, already exchanged (single-use — codeHash is cleared
-    // on exchange, so a reused code simply misses this lookup), or otherwise dead.
+
+  // NON-authoritative pre-check: only used to fetch codeChallenge (so the
+  // PKCE digest below has something to compare against) and to short-circuit
+  // an obviously-dead code without minting tokens. It is a separate
+  // transaction from the mutation below and can be stale under concurrency —
+  // that's fine, because it never decides success. The ONLY authoritative
+  // check-and-consume is the single atomic mutation
+  // (finalizeAuthorizationCode's doc comment explains why it must be one
+  // mutation, not a query followed by a separate write).
+  const preCheck = await ctx.runQuery(internal.internal.oauthStore.findGrantByCodeHash, { codeHash });
+  if (preCheck === null || preCheck.codeChallenge === undefined) {
     return oauthErrorResponse(400, 'invalid_grant', 'Unknown or already-used authorization code.');
   }
 
-  if (grant.clientId !== clientId || grant.redirectUri !== redirectUri) {
-    // Possible misuse (code issued for a different client/redirect) — burn it.
-    await ctx.runMutation(internal.internal.oauthStore.consumeCode, { grantId: grant._id });
-    return oauthErrorResponse(400, 'invalid_grant', 'client_id or redirect_uri does not match the authorization request.');
-  }
-
-  if (Date.now() > grant.codeExpiresAt) {
-    await ctx.runMutation(internal.internal.oauthStore.consumeCode, { grantId: grant._id });
-    return oauthErrorResponse(400, 'invalid_grant', 'Authorization code has expired.');
-  }
-
-  if (!(await pkceMatches(codeVerifier, grant.codeChallenge))) {
-    // A failed PKCE check burns the code too — no verifier-guessing retry loop.
-    await ctx.runMutation(internal.internal.oauthStore.consumeCode, { grantId: grant._id });
-    return oauthErrorResponse(400, 'invalid_grant', 'code_verifier does not match code_challenge.');
-  }
-
+  const pkceOk = await pkceMatches(codeVerifier, preCheck.codeChallenge);
   const tokens = await issueTokenPair();
-  await ctx.runMutation(internal.internal.oauthStore.exchangeCode, {
-    grantId: grant._id,
+
+  const result = await ctx.runMutation(internal.internal.oauthStore.finalizeAuthorizationCode, {
+    codeHash,
+    clientId,
+    redirectUri,
+    now: Date.now(),
+    pkceOk,
     accessTokenHash: tokens.accessTokenHash,
     refreshTokenHash: tokens.refreshTokenHash,
   });
-  return tokenResponse(tokens, grant.scopes);
+
+  if (!result.ok) {
+    const messages: Record<typeof result.reason, string> = {
+      not_found: 'Unknown or already-used authorization code.',
+      client_mismatch: 'client_id or redirect_uri does not match the authorization request.',
+      expired: 'Authorization code has expired.',
+      pkce_mismatch: 'code_verifier does not match code_challenge.',
+    };
+    return oauthErrorResponse(400, 'invalid_grant', messages[result.reason]);
+  }
+
+  return tokenResponse(tokens, result.scopes);
 }
 
 async function handleRefreshToken(ctx: ActionCtx, params: URLSearchParams): Promise<Response> {
